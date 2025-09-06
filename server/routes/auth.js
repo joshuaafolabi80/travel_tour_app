@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs'); 
 const User = require('../models/User');
 
 const router = express.Router();
@@ -17,12 +18,16 @@ router.post('/register', async (req, res) => {
         message: 'User already exists with this email or username'
       });
     }
+
+    // Hash the password before saving
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
     
-    // Create new user
+    // Create new user with hashed password
     const newUser = new User({
       username,
       email,
-      password,
+      password: hashedPassword, // Store the hashed password
       role: email === 'admin@gmail.com' ? 'admin' : 'user'
     });
     
@@ -70,8 +75,8 @@ router.post('/login', async (req, res) => {
       });
     }
     
-    // Check password
-    const isPasswordValid = await user.correctPassword(password, user.password);
+    // Check password using bcrypt
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
@@ -102,6 +107,39 @@ router.post('/login', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error during login',
+      error: error.message
+    });
+  }
+});
+
+// Password reset endpoint
+router.put('/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    
+    // Find user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found. Please enter a valid email.'
+      });
+    }
+
+    // Hash the new password and update the user
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+    
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successful. You can now log in with your new password.'
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error during password reset',
       error: error.message
     });
   }
