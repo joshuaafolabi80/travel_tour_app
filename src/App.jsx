@@ -140,9 +140,7 @@ const App = () => {
   const [userRole, setUserRole] = useState('');
   const [userData, setUserData] = useState(null);
   const [authToken, setAuthToken] = useState(null);
-
-  // NOTE: The `useEffect` hook that automatically checks for a token has been removed.
-  // This forces the user to go through the splash and login screens.
+  const [alert, setAlert] = useState({ type: '', message: '' });
 
   const handleStartClick = () => {
     setShowSplash(false);
@@ -162,18 +160,28 @@ const App = () => {
         localStorage.setItem('authToken', token);
         setAuthToken(token);
         setUserData(user);
-        setIsLoggedIn(true);
-        setUserRole(user.role);
+
+        // Display success alert immediately
+        setAlert({ type: 'success', message: 'Login successful! Redirecting...' });
         
-        if (user.role === 'admin') {
-          setCurrentPage('admin-dashboard');
-        } else {
-          setCurrentPage('home');
-        }
+        // Wait 2 seconds before redirecting to allow the user to see the message
+        setTimeout(() => {
+          setIsLoggedIn(true);
+          setUserRole(user.role);
+          if (user.role === 'admin') {
+            setCurrentPage('admin-dashboard');
+          } else {
+            setCurrentPage('home');
+          }
+          setAlert({ type: '', message: '' }); // Clear the alert
+        }, 2000); // 2000 milliseconds = 2 seconds
+
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Login failed. Please check your credentials.');
+      // Show error alert immediately
+      setAlert({ type: 'error', message: 'Login failed. Please check your credentials.' });
+      setTimeout(() => setAlert({ type: '', message: '' }), 5000); // Hide after 5 seconds
     }
   };
 
@@ -187,18 +195,28 @@ const App = () => {
         localStorage.setItem('authToken', token);
         setAuthToken(token);
         setUserData(user);
-        setIsLoggedIn(true);
-        setUserRole(user.role);
+
+        // Display success alert immediately
+        setAlert({ type: 'success', message: 'Registration successful! Redirecting...' });
         
-        if (user.role === 'admin') {
-          setCurrentPage('admin-dashboard');
-        } else {
-          setCurrentPage('home');
-        }
+        // Wait 2 seconds before redirecting
+        setTimeout(() => {
+          setIsLoggedIn(true);
+          setUserRole(user.role);
+          if (user.role === 'admin') {
+            setCurrentPage('admin-dashboard');
+          } else {
+            setCurrentPage('home');
+          }
+          setAlert({ type: '', message: '' }); // Clear the alert
+        }, 2000);
+
       }
     } catch (error) {
       console.error('Registration error:', error);
-      alert('Registration failed. Please try again.');
+      // Show error alert immediately
+      setAlert({ type: 'error', message: 'Registration failed. Please try again.' });
+      setTimeout(() => setAlert({ type: '', message: '' }), 5000);
     }
   };
 
@@ -385,6 +403,11 @@ const App = () => {
         </div>
       ) : (
         <div className="login-overlay">
+          {alert.message && (
+            <div className={`alert-bar ${alert.type}`}>
+              {alert.message}
+            </div>
+          )}
           <LoginRegister onLogin={handleLogin} onRegister={handleRegister} />
         </div>
       )}
