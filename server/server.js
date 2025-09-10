@@ -1,3 +1,4 @@
+// server/server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -34,9 +35,14 @@ mongoose.connect(process.env.MONGODB_URI, {
   process.exit(1); // Exit if DB connection fails
 });
 
-// Import routes
+// Import and use routes
 const authRoutes = require('./routes/auth');
+// Import the new course route
+const courseRoutes = require('./routes/courses'); 
+
 app.use('/api/auth', authRoutes);
+// Use the new course route
+app.use('/api', courseRoutes);
 
 // Error handling middleware
 app.use((error, req, res, next) => {

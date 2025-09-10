@@ -1,8 +1,12 @@
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import { jwtDecode } from 'jwt-decode';
 import api from './services/api';
 import LoginRegister from './LoginRegister';
+import DestinationsPage from './destinations/DestinationsPage';
+import DestinationOverview from './destinations/DestinationOverview';
+import FullCourseContent from './destinations/FullCourseContent';
 import './App.css';
 
 // Reusable Slider Component for both Splash Screen and Home Page
@@ -102,20 +106,6 @@ const AdminDashboard = () => {
   );
 };
 
-// Function to validate tokens using jwt-decode
-const validateToken = (token) => {
-  try {
-    const decoded = jwtDecode(token);
-    // Check if token is expired
-    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-    return decoded;
-  } catch (error) {
-    return null;
-  }
-};
-
 const splashImages = [
   "/images/travelling_and_tour_1.jpg",
   "/images/travelling_and_tour_2.jpg",
@@ -133,7 +123,7 @@ const splashTexts = [
 ];
 
 const App = () => {
-  const [showSplash, setShowSplash] = useState(true); 
+  const [showSplash, setShowSplash] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const [currentPage, setCurrentPage] = useState('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -141,6 +131,37 @@ const App = () => {
   const [userData, setUserData] = useState(null);
   const [authToken, setAuthToken] = useState(null);
   const [alert, setAlert] = useState({ type: '', message: '' });
+  const [selectedCourse, setSelectedCourse] = useState(null);
+
+  // Function to validate tokens using jwt-decode
+  const validateToken = (token) => {
+    try {
+      const decoded = jwtDecode(token);
+      // Check if token is expired
+      if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+        return null;
+      }
+      return decoded;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      const decoded = validateToken(token);
+      if (decoded) {
+        setIsLoggedIn(true);
+        setUserRole(decoded.role);
+        setUserData(decoded);
+        setShowSplash(false); // Skip splash if already logged in
+      } else {
+        localStorage.removeItem('authToken');
+        setShowSplash(true); // Show splash if token is invalid
+      }
+    }
+  }, []);
 
   const handleStartClick = () => {
     setShowSplash(false);
@@ -229,6 +250,31 @@ const App = () => {
     setCurrentPage('home');
     setShowMenu(false);
     setShowSplash(true); 
+  };
+
+  const handleSelectDestination = async (destinationId) => {
+    setCurrentPage('loading');
+    try {
+      const response = await api.get(`/courses/${destinationId}`);
+      if (response.data.success) {
+        setSelectedCourse(response.data.course);
+        setCurrentPage('destination-overview');
+      } else {
+        setAlert({ type: 'error', message: 'Could not find course details.' });
+        setCurrentPage('destinations');
+      }
+    } catch (error) {
+      setAlert({ type: 'error', message: 'Failed to fetch course data.' });
+      setCurrentPage('destinations');
+    }
+  };
+
+  const handleStartCourse = () => {
+    setCurrentPage('full-course-content');
+  };
+
+  const handleTakeQuiz = () => {
+    setCurrentPage('quiz'); // You'll build this page later
   };
 
   const toggleMenu = () => {
@@ -350,7 +396,7 @@ const App = () => {
                   </div>
                 </div>
                 <div className="navigation-grid">
-                  <div className="nav-grid-item">
+                  <div className="nav-grid-item" onClick={() => navigateTo('destinations')}>
                     <i className="fas fa-umbrella-beach nav-icon"></i>
                     <span className="nav-text">Destinations</span>
                   </div>
@@ -387,10 +433,13 @@ const App = () => {
                 </section>
               </div>
             )}
-            {currentPage === 'admin-dashboard' && (
-              <AdminDashboard />
-            )}
-            {currentPage !== 'home' && currentPage !== 'admin-dashboard' && (
+            {currentPage === 'destinations' && <DestinationsPage onSelectDestination={handleSelectDestination} />}
+            {currentPage === 'destination-overview' && selectedCourse && <DestinationOverview course={selectedCourse} onStartCourse={handleStartCourse} />}
+            {currentPage === 'full-course-content' && selectedCourse && <FullCourseContent course={selectedCourse} onTakeQuiz={handleTakeQuiz} />}
+            {currentPage === 'admin-dashboard' && <AdminDashboard />}
+            {currentPage === 'loading' && <div>Loading...</div>}
+            {currentPage !== 'home' && currentPage !== 'admin-dashboard' && currentPage !== 'destinations' && 
+             currentPage !== 'destination-overview' && currentPage !== 'full-course-content' && currentPage !== 'loading' && (
               <div className="generic-page-content">
                 <h2 className="generic-page-title">{currentPage} Page</h2>
                 <p>Content for {currentPage} will go here.</p>
