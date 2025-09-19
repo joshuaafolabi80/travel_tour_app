@@ -1,40 +1,33 @@
 // src/PasswordResetForm.jsx
 
 import React, { useState } from 'react';
-import api from './services/api'; // Assuming your api service is set up correctly
+import api from './services/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const PasswordResetForm = ({ onBack, onResetSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [message, setMessage] = useState({ text: '', type: '' });
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage({ text: '', type: '' });
     setIsLoading(true);
 
     if (password !== confirmPassword) {
-      setMessage({ text: 'Passwords do not match.', type: 'danger' });
+      // We no longer set a message here. The parent component will handle the alert.
       setIsLoading(false);
       return;
     }
 
     try {
-      const response = await api.put('/auth/reset-password', { email, newPassword: password });
+      // The `onResetSuccess` prop is an asynchronous function that handles the full flow.
+      await onResetSuccess({ email, newPassword: password });
       
-      if (response.data.success) {
-        setMessage({ text: 'Password reset successful! Logging you in...', type: 'success' });
-        // Automatically log the user in after successful reset
-        onResetSuccess(email, password);
-      } else {
-        setMessage({ text: response.data.message || 'Failed to reset password. Please try again.', type: 'danger' });
-      }
-    } catch (error) {
-      console.error('Password reset error:', error);
-      setMessage({ text: 'Failed to reset password. Check your email.', type: 'danger' });
+      // Clear the form fields after a successful submission.
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
     } finally {
       setIsLoading(false);
     }
@@ -47,12 +40,6 @@ const PasswordResetForm = ({ onBack, onResetSuccess }) => {
         <p className="text-muted">Enter your email and a new password to reset it.</p>
       </div>
       
-      {message.text && (
-        <div className={`alert alert-${message.type}`} role="alert">
-          {message.text}
-        </div>
-      )}
-
       <form onSubmit={handleSubmit}>
         <div className="mb-3">
           <label htmlFor="email" className="form-label">Email Address</label>

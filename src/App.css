@@ -255,7 +255,7 @@
 .app-header {
   background-color: var(--primary-orange);
   color: var(--white);
-  padding: 1rem;
+  padding: 0.5rem 1rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   display: flex;
   justify-content: space-between;
@@ -263,6 +263,7 @@
   position: sticky;
   top: 0;
   z-index: 20;
+  min-height: 60px; /* Fixed height for consistency */
 }
 
 .hamburger-menu-icon {
@@ -274,9 +275,14 @@
   border: none;
   color: var(--white);
   cursor: pointer;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* This is the corrected hover class name */
 .hamburger-menu-icon:hover {
   background-color: var(--white);
   color: var(--primary-orange);
@@ -307,17 +313,23 @@
 }
 
 .header-logo-container {
-  flex-grow: 1;
   display: flex;
   justify-content: center;
+  align-items: center;
+  flex: 1;
+  min-width: 0; /* Prevents flex item from overflowing */
 }
 
 .header-logo {
   height: 2.5rem;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .header-right-spacer {
-  width: 2rem;
+  width: 48px;
+  visibility: hidden;
+  flex-shrink: 0;
 }
 
 /* --- Mobile Menu --- */
@@ -326,6 +338,7 @@
   justify-content: center;
   align-items: center;
   padding: 1.5rem 1rem;
+  background-color: var(--primary-orange);
 }
 
 .mobile-menu-title {
@@ -336,29 +349,32 @@
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* Mobile menu improvements - KEEPING ORANGE BACKGROUND */
 .mobile-dropdown-menu {
   position: fixed;
   top: 0;
   left: 0;
-  width: 16rem;
+  width: 280px;
   height: 100%;
   background-color: var(--primary-orange);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 极速电竞);
   z-index: 30;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem 1rem 1rem 1rem;
-  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.mobile-menu-scroll-container {
+  flex: 1;
   overflow-y: auto;
+  padding-bottom: 20px;
 }
 
 .mobile-menu-header {
   display: flex;
   justify-content: flex-end;
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  margin-bottom: 0;
+  padding: 1rem;
+  background-color: var(--primary-orange);
 }
 
 .mobile-menu-close {
@@ -383,7 +399,6 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
 }
 
 .mobile-menu-item {
@@ -392,25 +407,25 @@
   gap: 0.75rem;
   color: var(--white);
   font-size: 1.125rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
+  padding: 1rem 1.5rem;
   width: 100%;
   text-align: left;
   transition: background-color 0.3s, color 0.3s;
   background: none;
   border: none;
   cursor: pointer;
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .mobile-menu-item:hover {
-  background-color: var(--white);
-  color: var(--primary-orange);
+  background-color: rgba(255, 255, 255, 0.2);
+  color: var(--white);
 }
 
 /* --- Main Content --- */
 .main-app-content {
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-height: 100vh;
 }
@@ -420,12 +435,15 @@
   overflow-y: auto;
   padding: 1rem;
   background-color: var(--gray-light);
+  padding-bottom: 70px;
 }
 
 .home-page-container {
   max-width: 64rem;
   margin-left: auto;
   margin-right: auto;
+  padding-bottom: 60px;
+  min-height: calc(100vh - 140px); /* Ensure content area takes at least full height minus header/footer */
 }
 
 .navigation-grid {
@@ -498,7 +516,6 @@
   cursor: pointer;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
-
 .packages-button:hover {
   background-color: #e65100;
 }
@@ -507,6 +524,11 @@
   padding: 1rem;
   text-align: center;
   color: var(--text-color-medium);
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 
 .generic-page-title {
@@ -515,12 +537,28 @@
   margin-bottom: 1rem;
 }
 
+/* Footer - FIXED for both desktop and mobile */
 .app-footer {
   background-color: var(--dark-blue-purple);
   color: var(--white);
-  padding: 1.5rem;
+  padding: 1rem;
   text-align: center;
   font-size: 0.875rem;
+  width: 100%;
+  position: relative;
+  margin-top: auto;
+}
+
+/* Ensure footer is visible on mobile */
+@media (max-width: 768px) {
+  .app-footer {
+    position: relative;
+    margin-top: auto;
+  }
+  
+  .home-page-container {
+    min-height: calc(100vh - 120px);
+  }
 }
 
 .menu-enter {
@@ -550,6 +588,113 @@
 .admin-dashboard h2 {
   color: #ff6f00;
   margin-bottom: 1rem;
+}
+
+/* Hide desktop nav on mobile screens */
+@media (max-width: 768px) {
+  .desktop-nav {
+    display: none !important;
+  }
+  
+  .header-logo-container {
+    margin: 0 auto;
+    padding: 0 10px;
+  }
+  
+  .header-right-spacer {
+    width: 48px;
+  }
+  
+  .app-header {
+    padding: 0.5rem;
+  }
+}
+
+/* Show desktop nav on larger screens */
+@media (min-width: 769px) {
+  .hamburger-menu-icon {
+    display: none !important;
+  }
+  
+  .desktop-nav {
+    display: flex;
+  }
+  
+  .mobile-dropdown-menu {
+    display: none !important;
+  }
+  
+  .app-header {
+    padding: 0.5rem 1.5rem;
+  }
+}
+
+/* Ensure header layout works properly */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+}
+
+.desktop-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.desktop-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+}
+
+/* Notification Badges */
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background-color: #ff4757;
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.mobile-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+}
+
+.desktop-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+/* Ensure menu items have enough space for badges */
+.mobile-menu-list li {
+  position: relative;
+}
+
+.desktop-nav {
+  display: flex;
+  gap: 5px;
 }
 
 /* --- Responsive Design --- */
@@ -588,13 +733,13 @@
 
 .alert-bar {
   position: absolute;
-  top: 10%; /* Adjust as needed */
+  top: 10%;
   left: 50%;
   transform: translateX(-50%);
   width: 90%;
   max-width: 400px;
   padding: 12px 20px;
-  border-radius: 8px; /* Rounded corners */
+  border-radius: 8px;
   text-align: center;
   font-weight: bold;
   font-size: 16px;
@@ -605,13 +750,13 @@
 }
 
 .alert-bar.success {
-  background-color: #d4edda; /* Light green */
+  background-color: #d4edda;
   border: 1px solid #c3e6cb;
   color: #155724;
 }
 
 .alert-bar.error {
-  background-color: #f8d7da; /* Light red */
+  background-color: #f8d7da;
   border: 1px solid #f5c6cb;
   color: #721c24;
 }

@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import { jwtDecode } from 'jwt-decode';
@@ -132,6 +131,18 @@ const App = () => {
   const [authToken, setAuthToken] = useState(null);
   const [alert, setAlert] = useState({ type: '', message: '' });
   const [selectedCourse, setSelectedCourse] = useState(null);
+  
+  // NEW STATE FOR NOTIFICATION COUNTS
+  const [notificationCounts, setNotificationCounts] = useState({
+    quizScores: 0,
+    courseRemarks: 0,
+    generalCourses: 0,
+    masterclassCourses: 0,
+    importantInfo: 0,
+    adminMessages: 0,
+    quizCompleted: 0,
+    courseCompleted: 0
+  });
 
   // Function to validate tokens using jwt-decode
   const validateToken = (token) => {
@@ -147,6 +158,23 @@ const App = () => {
     }
   };
 
+  // Function to fetch notification counts
+  const fetchNotificationCounts = async () => {
+    if (!isLoggedIn) return;
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await api.get('/notifications/counts', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        setNotificationCounts(response.data.counts);
+      }
+    } catch (error) {
+      console.error('Error fetching notification counts:', error);
+    }
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('authToken');
     if (token) {
@@ -156,12 +184,24 @@ const App = () => {
         setUserRole(decoded.role);
         setUserData(decoded);
         setShowSplash(false); // Skip splash if already logged in
+        
+        // Fetch notification counts after login
+        fetchNotificationCounts();
       } else {
         localStorage.removeItem('authToken');
         setShowSplash(true); // Show splash if token is invalid
       }
     }
   }, []);
+
+  // Set up interval to check for notifications
+  useEffect(() => {
+    let interval;
+    if (isLoggedIn) {
+      interval = setInterval(fetchNotificationCounts, 30000); // Check every 30 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isLoggedIn]);
 
   const handleStartClick = () => {
     setShowSplash(false);
@@ -189,6 +229,10 @@ const App = () => {
         setTimeout(() => {
           setIsLoggedIn(true);
           setUserRole(user.role);
+          
+          // Fetch notification counts after successful login
+          fetchNotificationCounts();
+          
           if (user.role === 'admin') {
             setCurrentPage('admin-dashboard');
           } else {
@@ -224,6 +268,10 @@ const App = () => {
         setTimeout(() => {
           setIsLoggedIn(true);
           setUserRole(user.role);
+          
+          // Fetch notification counts after successful registration
+          fetchNotificationCounts();
+          
           if (user.role === 'admin') {
             setCurrentPage('admin-dashboard');
           } else {
@@ -290,17 +338,130 @@ const App = () => {
     }
   };
 
-  const menuItems = [
-    { name: "Webinar Registration", icon: "fa-solid fa-calendar-alt" },
-    { name: "Whatsapp Chat", icon: "fa-brands fa-whatsapp" },
-    { name: "Privacy and Policy", icon: "fa-solid fa-shield-alt" },
-    { name: "Terms and Conditions", icon: "fa-solid fa-file-contract" },
-    { name: "Disclaimer", icon: "fa-solid fa-exclamation-triangle" },
-    { name: "Rate Our App", icon: "fa-solid fa-star" },
-    { name: "Share Our App", icon: "fa-solid fa-share-alt" },
-    ...(isLoggedIn ? [{ name: "Logout", icon: "fa-solid fa-sign-out-alt", action: handleLogout }] : []),
-    { name: "Exit", icon: "fa-solid fa-times-circle" },
+  // Function to render notification badge
+  const renderNotificationBadge = (count) => {
+    if (count > 0) {
+      return (
+        <span className="notification-badge">
+          {count > 99 ? '99+' : count}
+        </span>
+      );
+    }
+    return null;
+  };
+
+  // UPDATED MENU ITEMS WITH NOTIFICATION BADGES
+  const userMenuItems = [
+    { 
+      name: "Quiz and Score", 
+      icon: "fa-solid fa-chart-line",
+      notification: notificationCounts.quizScores,
+      action: () => navigateTo('quiz-scores')
+    },
+    { 
+      name: "Course and Remarks", 
+      icon: "fa-solid fa-graduation-cap",
+      notification: notificationCounts.courseRemarks,
+      action: () => navigateTo('course-remarks')
+    },
+    { 
+      name: "General Courses", 
+      icon: "fa-solid fa-book",
+      notification: notificationCounts.generalCourses,
+      action: () => navigateTo('general-courses')
+    },
+    { 
+      name: "Masterclass Courses", 
+      icon: "fa-solid fa-crown",
+      notification: notificationCounts.masterclassCourses,
+      action: () => navigateTo('masterclass-courses')
+    },
+    { 
+      name: "Important Information", 
+      icon: "fa-solid fa-info-circle",
+      notification: notificationCounts.importantInfo,
+      action: () => navigateTo('important-information')
+    },
+    { 
+      name: "Message from Admin", 
+      icon: "fa-solid fa-envelope",
+      notification: notificationCounts.adminMessages,
+      action: () => navigateTo('admin-messages')
+    },
+    { 
+      name: "Community", 
+      icon: "fa-solid fa-users",
+      action: () => navigateTo('community')
+    },
+    { 
+      name: "Contact Us", 
+      icon: "fa-solid fa-phone",
+      action: () => navigateTo('contact-us')
+    },
+    { 
+      name: "Rate and Share our App", 
+      icon: "fa-solid fa-share-alt",
+      action: () => navigateTo('rate-share')
+    },
+    { 
+      name: "Logout", 
+      icon: "fa-solid fa-sign-out-alt", 
+      action: handleLogout
+    },
   ];
+
+  const adminMenuItems = [
+    { 
+      name: "Registered Students", 
+      icon: "fa-solid fa-user-graduate",
+      action: () => navigateTo('admin-students')
+    },
+    { 
+      name: "Message your Students", 
+      icon: "fa-solid fa-comments",
+      action: () => navigateTo('admin-message-students')
+    },
+    { 
+      name: "Quiz Completed", 
+      icon: "fa-solid fa-tasks",
+      notification: notificationCounts.quizCompleted,
+      action: () => navigateTo('admin-quiz-completed')
+    },
+    { 
+      name: "Course Completed", 
+      icon: "fa-solid fa-certificate",
+      notification: notificationCounts.courseCompleted,
+      action: () => navigateTo('admin-course-completed')
+    },
+    { 
+      name: "Manage my Courses", 
+      icon: "fa-solid fa-cog",
+      action: () => navigateTo('admin-manage-courses')
+    },
+    { 
+      name: "Send Information", 
+      icon: "fa-solid fa-bullhorn",
+      action: () => navigateTo('admin-send-information')
+    },
+    { 
+      name: "Community", 
+      icon: "fa-solid fa-users",
+      action: () => navigateTo('admin-community')
+    },
+    { 
+      name: "Logout", 
+      icon: "fa-solid fa-sign-out-alt", 
+      action: handleLogout
+    },
+  ];
+
+  // Get the appropriate menu based on user role
+  const getMenuItems = () => {
+    if (userRole === 'admin') {
+      return adminMenuItems;
+    }
+    return userMenuItems;
+  };
 
   return (
     <div className="app-container">
@@ -334,10 +495,16 @@ const App = () => {
               <i className="fas fa-bars"></i>
             </button>
             <div className="desktop-nav">
-              {menuItems.map((item) => (
-                <button key={item.name} className="desktop-nav-item" onClick={() => navigateTo(item.name.toLowerCase().replace(/\s/g, ''), item.action)}>
+              {getMenuItems().map((item) => (
+                <button 
+                  key={item.name} 
+                  className="desktop-nav-item" 
+                  onClick={item.action}
+                  style={{position: 'relative'}}
+                >
                   <i className={item.icon}></i>
                   <span>{item.name}</span>
+                  {item.notification !== undefined && renderNotificationBadge(item.notification)}
                 </button>
               ))}
             </div>
@@ -363,19 +530,23 @@ const App = () => {
                   The Conclave Academy
                 </h1>
               </div>
-              <ul className="mobile-menu-list">
-                {menuItems.map((item) => (
-                  <li key={item.name}>
-                    <button
-                      onClick={() => navigateTo(item.name.toLowerCase().replace(/\s/g, ''), item.action)}
-                      className="mobile-menu-item"
-                    >
-                      <i className={item.icon}></i>
-                      <span>{item.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="mobile-menu-scroll-container">
+                <ul className="mobile-menu-list">
+                  {getMenuItems().map((item) => (
+                    <li key={item.name}>
+                      <button
+                        onClick={item.action}
+                        className="mobile-menu-item"
+                        style={{position: 'relative'}}
+                      >
+                        <i className={item.icon}></i>
+                        <span>{item.name}</span>
+                        {item.notification !== undefined && renderNotificationBadge(item.notification)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </CSSTransition>
           <main className="main-content-area">
@@ -437,12 +608,30 @@ const App = () => {
             {currentPage === 'destination-overview' && selectedCourse && <DestinationOverview course={selectedCourse} onStartCourse={handleStartCourse} />}
             {currentPage === 'full-course-content' && selectedCourse && <FullCourseContent course={selectedCourse} onTakeQuiz={handleTakeQuiz} />}
             {currentPage === 'admin-dashboard' && <AdminDashboard />}
-            {currentPage === 'loading' && <div>Loading...</div>}
-            {currentPage !== 'home' && currentPage !== 'admin-dashboard' && currentPage !== 'destinations' && 
-             currentPage !== 'destination-overview' && currentPage !== 'full-course-content' && currentPage !== 'loading' && (
+            
+            {/* NEW DASHBOARD PAGES - PLACEHOLDERS FOR NOW */}
+            {(currentPage === 'quiz-scores' || currentPage === 'course-remarks' || 
+              currentPage === 'general-courses' || currentPage === 'masterclass-courses' ||
+              currentPage === 'important-information' || currentPage === 'admin-messages' ||
+              currentPage === 'community' || currentPage === 'contact-us' || 
+              currentPage === 'rate-share' || currentPage === 'admin-students' ||
+              currentPage === 'admin-message-students' || currentPage === 'admin-quiz-completed' ||
+              currentPage === 'admin-course-completed' || currentPage === 'admin-manage-courses' ||
+              currentPage === 'admin-send-information' || currentPage === 'admin-community') && (
               <div className="generic-page-content">
-                <h2 className="generic-page-title">{currentPage} Page</h2>
-                <p>Content for {currentPage} will go here.</p>
+                <h2 className="generic-page-title">{currentPage.replace(/-/g, ' ').toUpperCase()} Page</h2>
+                <p>This page is under construction. Content for {currentPage.replace(/-/g, ' ')} will be implemented soon.</p>
+                <button className="btn btn-primary mt-3" onClick={() => navigateTo('home')}>
+                  <i className="fas fa-arrow-left me-2"></i> Back to Home
+                </button>
+              </div>
+            )}
+            
+            {currentPage === 'loading' && (
+              <div className="d-flex justify-content-center align-items-center" style={{height: '50vh'}}>
+                <div className="spinner-border text-primary" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
               </div>
             )}
           </main>

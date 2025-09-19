@@ -8,7 +8,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173', // Your React app's URL
+  origin: ['http://localhost:5173', 'http://localhost:5174'], // Allow both frontend ports
   credentials: true
 }));
 app.use(express.json());

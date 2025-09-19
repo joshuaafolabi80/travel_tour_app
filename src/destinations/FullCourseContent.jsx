@@ -175,7 +175,8 @@ const FullCourseContent = ({ course, onTakeQuiz }) => {
                 fontFamily: "'Open Sans', sans-serif",
                 lineHeight: '1.8',
                 color: '#2c3e50',
-                fontSize: '1.1rem'
+                fontSize: '1.1rem',
+                textAlign: 'justify'
               }}>
                 {currentSection.content}
               </p>
@@ -195,7 +196,8 @@ const FullCourseContent = ({ course, onTakeQuiz }) => {
                     <div key={index} className="col-12">
                       <div className="itinerary-card card border-0 shadow-sm" style={{
                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        color: 'white'
+                        color: 'white',
+                        textAlign: 'justify'
                       }}>
                         <div className="card-body">
                           <h6 className="card-title fw-bold">Day {day.day}: {day.title}</h6>
@@ -211,30 +213,35 @@ const FullCourseContent = ({ course, onTakeQuiz }) => {
         </div>
 
         {/* Navigation buttons */}
-        <div className="navigation-buttons d-flex justify-content-between mb-5">
+        <div className="navigation-buttons d-flex justify-content-between gap-3 mb-5">
           <button 
-            className="btn btn-primary btn-lg px-4 py-2" 
+            className="btn btn-primary px-3 py-2 flex-grow-0" 
             onClick={handlePrevious} 
             disabled={currentSectionIndex === 0}
             style={{
-              borderRadius: '50px',
+              borderRadius: '8px',
               fontFamily: "'Montserrat', sans-serif",
-              fontWeight: '600'
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              minWidth: '160px'
             }}
           >
-            <i className="fas fa-arrow-left me-2"></i> Previous Section
+            <i className="fas fa-arrow-left me-2"></i> Previous
           </button>
+          
           <button 
-            className="btn btn-primary btn-lg px-4 py-2" 
+            className="btn btn-primary px-3 py-2 flex-grow-0" 
             onClick={handleNext} 
             disabled={currentSectionIndex === course.fullCourseDetails.sections.length - 1}
             style={{
-              borderRadius: '50px',
+              borderRadius: '8px',
               fontFamily: "'Montserrat', sans-serif",
-              fontWeight: '600'
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              minWidth: '160px'
             }}
           >
-            Next Section <i className="fas fa-arrow-right ms-2"></i>
+            Next <i className="fas fa-arrow-right ms-2"></i>
           </button>
         </div>
 
@@ -242,13 +249,13 @@ const FullCourseContent = ({ course, onTakeQuiz }) => {
         {currentSectionIndex === course.fullCourseDetails.sections.length - 1 && (
           <div className="text-center">
             <button 
-              className="btn btn-success btn-lg px-5 py-3" 
+              className="btn btn-success px-4 py-2" 
               onClick={onTakeQuiz}
               style={{
-                borderRadius: '50px',
+                borderRadius: '8px',
                 fontFamily: "'Montserrat', sans-serif",
-                fontWeight: '700',
-                fontSize: '1.2rem'
+                fontWeight: '600',
+                fontSize: '1rem'
               }}
             >
               <i className="fas fa-graduation-cap me-2"></i> Take Final Quiz
