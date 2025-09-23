@@ -1,13 +1,11 @@
-// src/LoginRegister.jsx
-
 import React, { useState } from 'react';
-import PasswordResetForm from './PasswordResetForm'; // Import the new component
+import PasswordResetForm from './PasswordResetForm';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import './LoginRegister.css'; // Assuming you have a CSS file for this component
+import './LoginRegister.css';
 
 const LoginRegister = ({ onLogin, onRegister }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [isPasswordReset, setIsPasswordReset] = useState(false); // New state to toggle reset form
+  const [isPasswordReset, setIsPasswordReset] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -39,6 +37,10 @@ const LoginRegister = ({ onLogin, onRegister }) => {
         setMessage({ text: "Passwords don't match!", type: 'danger' });
         return;
       }
+      if (formData.password.length < 6) {
+        setMessage({ text: 'Password must be at least 6 characters long.', type: 'danger' });
+        return;
+      }
       if (!formData.email || !formData.password || !formData.username) {
         setMessage({ text: 'Please fill all required fields.', type: 'danger' });
         return;
@@ -64,9 +66,9 @@ const LoginRegister = ({ onLogin, onRegister }) => {
     setIsPasswordReset(true);
   };
 
-  const handleResetSuccess = (email, password) => {
-    // This function is passed to the PasswordResetForm and is called on success
-    onLogin(email, password);
+  const handleResetSuccess = async (email, password) => {
+    // Use the existing login function with the new credentials
+    await onLogin(email, password);
   };
 
   return (
@@ -110,7 +112,6 @@ const LoginRegister = ({ onLogin, onRegister }) => {
               )}
 
               <form onSubmit={handleSubmit}>
-                {/* ... (Existing form inputs) */}
                 {!isLogin && (
                   <div className="mb-3">
                     <label htmlFor="username" className="form-label">Username</label>
@@ -151,7 +152,8 @@ const LoginRegister = ({ onLogin, onRegister }) => {
                     value={formData.password}
                     onChange={handleInputChange}
                     required
-                    placeholder="Enter your password"
+                    placeholder={isLogin ? "Enter your password" : "Enter password (min 6 characters)"}
+                    minLength={!isLogin ? 6 : undefined}
                   />
                 </div>
 
@@ -167,6 +169,7 @@ const LoginRegister = ({ onLogin, onRegister }) => {
                       onChange={handleInputChange}
                       required={!isLogin}
                       placeholder="Confirm your password"
+                      minLength={6}
                     />
                   </div>
                 )}
@@ -176,7 +179,6 @@ const LoginRegister = ({ onLogin, onRegister }) => {
                 </button>
               </form>
               
-              {/* New: Forgot Password link */}
               {isLogin && (
                 <div className="text-end mt-2">
                   <a href="#" onClick={(e) => { e.preventDefault(); togglePasswordReset(); }} className="text-primary text-decoration-none fw-bold">

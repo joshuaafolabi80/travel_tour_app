@@ -697,6 +697,235 @@
   gap: 5px;
 }
 
+.alert-bar {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 400px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 16px;
+  color: #333;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+.alert-bar.success {
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.alert-bar.error {
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+
+/* Add these to your existing App.css - Keep all your original styles */
+
+/* Quiz Platform Specific Styles */
+.quiz-platform {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  padding: 2rem 0;
+}
+
+.quiz-option {
+  padding: 1rem 1.5rem;
+  margin-bottom: 0.75rem;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: between;
+}
+
+.quiz-option:hover {
+  border-color: #ff6f00;
+  background-color: #f8f9fa;
+  transform: translateX(5px);
+}
+
+.quiz-option.correct {
+  border-color: #28a745;
+  background-color: #d4edda;
+}
+
+.quiz-option.incorrect {
+  border-color: #dc3545;
+  background-color: #f8d7da;
+}
+
+.option-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: #ff6f00;
+  color: white;
+  border-radius: 50%;
+  font-weight: bold;
+}
+
+/* Full Course Content Enhancements */
+.full-course-container {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+  padding: 2rem 0;
+}
+
+.section-card {
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid rgba(255, 111, 0, 0.1);
+}
+
+/* Image Slider */
+.image-slider-container {
+  margin-top: 2rem;
+}
+
+.slider-wrapper {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.slider-inner {
+  height: 300px;
+  position: relative;
+}
+
+.slider-image {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1s ease-in-out;
+}
+
+.slider-image.active {
+  opacity: 1;
+}
+
+.slider-dots {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Progress bars */
+.progress {
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.progress-bar {
+  background-color: #ff6f00;
+  transition: width 0.5s ease-in-out;
+}
+
+/* Table enhancements */
+.table-hover tbody tr:hover {
+  background-color: rgba(255, 111, 0, 0.05);
+}
+
+/* Modal enhancements */
+.modal-header {
+  background-color: #ff6f00;
+  color: white;
+}
+
+/* Button enhancements */
+.btn-primary {
+  background-color: #ff6f00;
+  border-color: #ff6f00;
+}
+
+.btn-primary:hover {
+  background-color: #e65100;
+  border-color: #e65100;
+}
+
+.btn-outline-primary {
+  color: #ff6f00;
+  border-color: #ff6f00;
+}
+
+.btn-outline-primary:hover {
+  background-color: #ff6f00;
+  border-color: #ff6f00;
+  color: white;
+}
+
+/* Card enhancements */
+.card-header {
+  background-color: #ff6f00;
+  color: white;
+}
+
+/* Badge enhancements */
+.badge.bg-primary {
+  background-color: #ff6f00 !important;
+}
+
+/* Animation for quiz elements */
+@keyframes slideIn {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.feedback-card {
+  animation: slideIn 0.5s ease;
+}
+
+/* Responsive adjustments for quiz components */
+@media (max-width: 768px) {
+  .quiz-platform {
+    padding: 1rem 0;
+  }
+  
+  .quiz-option {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+  
+  .full-course-container {
+    padding: 1rem 0;
+  }
+}
+
+/* Ensure compatibility with your existing theme */
+.text-primary {
+  color: #ff6f00 !important;
+}
+
+.bg-primary {
+  background-color: #ff6f00 !important;
+}
+
+.border-primary {
+  border-color: #ff6f00 !important;
+}
+
 /* --- Responsive Design --- */
 @media (min-width: 640px) {
   .navigation-grid {
@@ -731,35 +960,7 @@
   }
 }
 
-.alert-bar {
-  position: absolute;
-  top: 10%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  max-width: 400px;
-  padding: 12px 20px;
-  border-radius: 8px;
-  text-align: center;
-  font-weight: bold;
-  font-size: 16px;
-  color: #333;
-  z-index: 1000;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  animation: fadeIn 0.5s ease-in-out;
-}
 
-.alert-bar.success {
-  background-color: #d4edda;
-  border: 1px solid #c3e6cb;
-  color: #155724;
-}
-
-.alert-bar.error {
-  background-color: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
-}
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateX(-50%) translateY(-20px); }

@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import { jwtDecode } from 'jwt-decode';
@@ -6,6 +7,24 @@ import LoginRegister from './LoginRegister';
 import DestinationsPage from './destinations/DestinationsPage';
 import DestinationOverview from './destinations/DestinationOverview';
 import FullCourseContent from './destinations/FullCourseContent';
+import QuizPlatform from './components/QuizPlatform';
+import QuizScores from './components/QuizScores';
+// import CourseRemarks from './components/CourseRemarks';
+// import GeneralCourses from './components/GeneralCourses';
+// import MasterclassCourses from './components/MasterclassCourses';
+// import ImportantInformation from './components/ImportantInformation';
+// import AdminMessages from './components/AdminMessages';
+// import Community from './components/Community';
+// import ContactUs from './components/ContactUs';
+// import RateShare from './components/RateShare';
+// import AdminDashboard from './components/AdminDashboard';
+// import AdminStudents from './components/AdminStudents';
+// import AdminMessageStudents from './components/AdminMessageStudents';
+// import AdminQuizCompleted from './components/AdminQuizCompleted';
+// import AdminCourseCompleted from './components/AdminCourseCompleted';
+// import AdminManageCourses from './components/AdminManageCourses';
+// import AdminSendInformation from './components/AdminSendInformation';
+// import AdminCommunity from './components/AdminCommunity';
 import './App.css';
 
 // Reusable Slider Component for both Splash Screen and Home Page
@@ -74,37 +93,6 @@ const HeroSlider = ({ images, texts, staticTitle, onLastSlide, onNextClick, isHo
   );
 };
 
-// Admin Dashboard Component
-const AdminDashboard = () => {
-  return (
-    <div className="admin-dashboard">
-      <h2>Admin Dashboard</h2>
-      <div className="admin-stats">
-        <div className="stat-card">
-          <h3>Total Users</h3>
-          <p>1,243</p>
-        </div>
-        <div className="stat-card">
-          <h3>Active Courses</h3>
-          <p>27</p>
-        </div>
-        <div className="stat-card">
-          <h3>Revenue</h3>
-          <p>$12,589</p>
-        </div>
-      </div>
-      <div className="recent-activities">
-        <h3>Recent Activities</h3>
-        <ul>
-          <li>User John Doe registered for "Advanced Tourism" course</li>
-          <li>New webinar scheduled for next Friday</li>
-          <li>5 new users joined in the last 24 hours</li>
-        </ul>
-      </div>
-    </div>
-  );
-};
-
 const splashImages = [
   "/images/travelling_and_tour_1.jpg",
   "/images/travelling_and_tour_2.jpg",
@@ -131,8 +119,8 @@ const App = () => {
   const [authToken, setAuthToken] = useState(null);
   const [alert, setAlert] = useState({ type: '', message: '' });
   const [selectedCourse, setSelectedCourse] = useState(null);
+  const [quizQuestions, setQuizQuestions] = useState([]);
   
-  // NEW STATE FOR NOTIFICATION COUNTS
   const [notificationCounts, setNotificationCounts] = useState({
     quizScores: 0,
     courseRemarks: 0,
@@ -144,11 +132,9 @@ const App = () => {
     courseCompleted: 0
   });
 
-  // Function to validate tokens using jwt-decode
   const validateToken = (token) => {
     try {
       const decoded = jwtDecode(token);
-      // Check if token is expired
       if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
         return null;
       }
@@ -158,15 +144,11 @@ const App = () => {
     }
   };
 
-  // Function to fetch notification counts
   const fetchNotificationCounts = async () => {
     if (!isLoggedIn) return;
     
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await api.get('/notifications/counts', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/notifications/counts');
       if (response.data.success) {
         setNotificationCounts(response.data.counts);
       }
@@ -183,22 +165,19 @@ const App = () => {
         setIsLoggedIn(true);
         setUserRole(decoded.role);
         setUserData(decoded);
-        setShowSplash(false); // Skip splash if already logged in
-        
-        // Fetch notification counts after login
+        setShowSplash(false);
         fetchNotificationCounts();
       } else {
         localStorage.removeItem('authToken');
-        setShowSplash(true); // Show splash if token is invalid
+        setShowSplash(true);
       }
     }
   }, []);
 
-  // Set up interval to check for notifications
   useEffect(() => {
     let interval;
     if (isLoggedIn) {
-      interval = setInterval(fetchNotificationCounts, 30000); // Check every 30 seconds
+      interval = setInterval(fetchNotificationCounts, 30000);
     }
     return () => clearInterval(interval);
   }, [isLoggedIn]);
@@ -222,15 +201,11 @@ const App = () => {
         setAuthToken(token);
         setUserData(user);
 
-        // Display success alert immediately
         setAlert({ type: 'success', message: 'Login successful! Redirecting...' });
         
-        // Wait 2 seconds before redirecting to allow the user to see the message
         setTimeout(() => {
           setIsLoggedIn(true);
           setUserRole(user.role);
-          
-          // Fetch notification counts after successful login
           fetchNotificationCounts();
           
           if (user.role === 'admin') {
@@ -238,15 +213,14 @@ const App = () => {
           } else {
             setCurrentPage('home');
           }
-          setAlert({ type: '', message: '' }); // Clear the alert
-        }, 2000); // 2000 milliseconds = 2 seconds
+          setAlert({ type: '', message: '' });
+        }, 2000);
 
       }
     } catch (error) {
       console.error('Login error:', error);
-      // Show error alert immediately
       setAlert({ type: 'error', message: 'Login failed. Please check your credentials.' });
-      setTimeout(() => setAlert({ type: '', message: '' }), 5000); // Hide after 5 seconds
+      setTimeout(() => setAlert({ type: '', message: '' }), 5000);
     }
   };
 
@@ -261,15 +235,11 @@ const App = () => {
         setAuthToken(token);
         setUserData(user);
 
-        // Display success alert immediately
         setAlert({ type: 'success', message: 'Registration successful! Redirecting...' });
         
-        // Wait 2 seconds before redirecting
         setTimeout(() => {
           setIsLoggedIn(true);
           setUserRole(user.role);
-          
-          // Fetch notification counts after successful registration
           fetchNotificationCounts();
           
           if (user.role === 'admin') {
@@ -277,13 +247,12 @@ const App = () => {
           } else {
             setCurrentPage('home');
           }
-          setAlert({ type: '', message: '' }); // Clear the alert
+          setAlert({ type: '', message: '' });
         }, 2000);
 
       }
     } catch (error) {
       console.error('Registration error:', error);
-      // Show error alert immediately
       setAlert({ type: 'error', message: 'Registration failed. Please try again.' });
       setTimeout(() => setAlert({ type: '', message: '' }), 5000);
     }
@@ -321,8 +290,19 @@ const App = () => {
     setCurrentPage('full-course-content');
   };
 
-  const handleTakeQuiz = () => {
-    setCurrentPage('quiz'); // You'll build this page later
+  const handleTakeQuiz = async () => {
+    try {
+      const response = await api.get(`/quiz/questions?courseId=${selectedCourse._id}`);
+      if (response.data.success) {
+        setQuizQuestions(response.data.questions);
+        setCurrentPage('quiz-platform');
+      } else {
+        setAlert({ type: 'error', message: 'Failed to load quiz questions.' });
+      }
+    } catch (error) {
+      console.error('Error fetching quiz questions:', error);
+      setAlert({ type: 'error', message: 'Failed to load quiz. Please try again.' });
+    }
   };
 
   const toggleMenu = () => {
@@ -338,7 +318,6 @@ const App = () => {
     }
   };
 
-  // Function to render notification badge
   const renderNotificationBadge = (count) => {
     if (count > 0) {
       return (
@@ -350,7 +329,6 @@ const App = () => {
     return null;
   };
 
-  // UPDATED MENU ITEMS WITH NOTIFICATION BADGES
   const userMenuItems = [
     { 
       name: "Quiz and Score", 
@@ -455,7 +433,6 @@ const App = () => {
     },
   ];
 
-  // Get the appropriate menu based on user role
   const getMenuItems = () => {
     if (userRole === 'admin') {
       return adminMenuItems;
@@ -605,27 +582,36 @@ const App = () => {
               </div>
             )}
             {currentPage === 'destinations' && <DestinationsPage onSelectDestination={handleSelectDestination} />}
-            {currentPage === 'destination-overview' && selectedCourse && <DestinationOverview course={selectedCourse} onStartCourse={handleStartCourse} />}
-            {currentPage === 'full-course-content' && selectedCourse && <FullCourseContent course={selectedCourse} onTakeQuiz={handleTakeQuiz} />}
-            {currentPage === 'admin-dashboard' && <AdminDashboard />}
-            
-            {/* NEW DASHBOARD PAGES - PLACEHOLDERS FOR NOW */}
-            {(currentPage === 'quiz-scores' || currentPage === 'course-remarks' || 
-              currentPage === 'general-courses' || currentPage === 'masterclass-courses' ||
-              currentPage === 'important-information' || currentPage === 'admin-messages' ||
-              currentPage === 'community' || currentPage === 'contact-us' || 
-              currentPage === 'rate-share' || currentPage === 'admin-students' ||
-              currentPage === 'admin-message-students' || currentPage === 'admin-quiz-completed' ||
-              currentPage === 'admin-course-completed' || currentPage === 'admin-manage-courses' ||
-              currentPage === 'admin-send-information' || currentPage === 'admin-community') && (
-              <div className="generic-page-content">
-                <h2 className="generic-page-title">{currentPage.replace(/-/g, ' ').toUpperCase()} Page</h2>
-                <p>This page is under construction. Content for {currentPage.replace(/-/g, ' ')} will be implemented soon.</p>
-                <button className="btn btn-primary mt-3" onClick={() => navigateTo('home')}>
-                  <i className="fas fa-arrow-left me-2"></i> Back to Home
-                </button>
-              </div>
+            {currentPage === 'destination-overview' && selectedCourse && (
+              <DestinationOverview course={selectedCourse} onStartCourse={handleStartCourse} />
             )}
+            {currentPage === 'full-course-content' && selectedCourse && (
+              <FullCourseContent course={selectedCourse} onTakeQuiz={handleTakeQuiz} />
+            )}
+            {currentPage === 'quiz-platform' && selectedCourse && quizQuestions.length > 0 && (
+              <QuizPlatform course={selectedCourse} questions={quizQuestions} />
+            )}
+            
+            {/* User Pages */}
+            {currentPage === 'quiz-scores' && <QuizScores />}
+            {/* {currentPage === 'course-remarks' && <CourseRemarks />} */}
+            {/* {currentPage === 'general-courses' && <GeneralCourses />} */}
+            {/* {currentPage === 'masterclass-courses' && <MasterclassCourses />} */}
+            {/* {currentPage === 'important-information' && <ImportantInformation />} */}
+            {/* {currentPage === 'admin-messages' && <AdminMessages />} */}
+            {/* {currentPage === 'community' && <Community />} */}
+            {/* {currentPage === 'contact-us' && <ContactUs />} */}
+            {/* {currentPage === 'rate-share' && <RateShare />} */}
+            
+            {/* Admin Pages */}
+            {/* {currentPage === 'admin-dashboard' && <AdminDashboard />} */}
+            {/* {currentPage === 'admin-students' && <AdminStudents />} */}
+            {/* {currentPage === 'admin-message-students' && <AdminMessageStudents />} */}
+            {/* {currentPage === 'admin-quiz-completed' && <AdminQuizCompleted />} */}
+            {/* {currentPage === 'admin-course-completed' && <AdminCourseCompleted />} */}
+            {/* {currentPage === 'admin-manage-courses' && <AdminManageCourses />} */}
+            {/* {currentPage === 'admin-send-information' && <AdminSendInformation />} */}
+            {/* {currentPage === 'admin-community' && <AdminCommunity />} */}
             
             {currentPage === 'loading' && (
               <div className="d-flex justify-content-center align-items-center" style={{height: '50vh'}}>

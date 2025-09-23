@@ -1,12 +1,9 @@
-// server/routes/auth.js
-
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Assuming you have a User model
+const User = require('../models/User');
 
-// Load environment variables for JWT secret
 require('dotenv').config();
 
 // Helper function to generate a JWT token
@@ -15,11 +12,19 @@ const generateToken = (user) => {
     {
       id: user._id,
       email: user.email,
-      role: user.role, // 'user' or 'admin'
+      role: user.role,
     },
-    process.env.JWT_SECRET, // Use a secret key from your .env file
-    { expiresIn: '1d' } // Token expires in 1 day
+    process.env.JWT_SECRET,
+    { expiresIn: '1d' }
   );
+};
+
+// Add password validation function
+const validatePassword = (password) => {
+  if (password.length < 6) {
+    return 'Password must be at least 6 characters long';
+  }
+  return null;
 };
 
 // Route to handle user registration
@@ -27,37 +32,32 @@ router.post('/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Validate request body
     if (!username || !email || !password) {
       return res.status(400).json({ success: false, message: 'Please enter all fields.' });
     }
 
-    // Check if the user already exists
+    // Validate password strength
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return res.status(400).json({ success: false, message: passwordError });
+    }
+
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'User with that email already exists.' });
     }
 
-    // Hash the password before saving it
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Create a new user instance
+    // Create user - let the model handle password hashing
     const newUser = new User({
       username,
       email,
-      password: hashedPassword,
-      // You can set a default role here, e.g., 'user'
+      password, // Model will hash this with 12 salt rounds
       role: 'user',
     });
 
-    // Save the new user to the database
     const savedUser = await newUser.save();
-
-    // Generate a JWT for the new user
     const token = generateToken(savedUser);
 
-    // Send the token and user data back to the frontend
     res.status(201).json({
       success: true,
       message: 'Registration successful!',
@@ -80,27 +80,23 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate request body
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Please enter all fields.' });
     }
 
-    // Find the user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ success: false, message: 'Invalid credentials.' });
     }
 
-    // Compare the provided password with the stored hashed password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Use the model method for password comparison
+    const isMatch = await user.correctPassword(password);
     if (!isMatch) {
       return res.status(400).json({ success: false, message: 'Invalid credentials.' });
     }
 
-    // If credentials are valid, generate a JWT
     const token = generateToken(user);
 
-    // Send the token and user data back
     res.status(200).json({
       success: true,
       message: 'Login successful!',
@@ -118,8 +114,8 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Route to handle password reset - CHANGED TO PUT TO MATCH FRONTEND
-router.put('/reset-password', async (req, res) => {
+// Change password reset to POST to match frontend
+router.post('/reset-password', async (req, res) => {
   try {
     const { email, newPassword } = req.body;
 
@@ -127,21 +123,21 @@ router.put('/reset-password', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email and new password are required.' });
     }
 
-    const user = await User.findOne({ email });
-    if (!user) {
-      // Return a non-specific message to prevent user enumeration
-      return res.status(404).json({ success: false, message: 'Failed to reset password. Please check your email and try again.' });
+    // Validate new password
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ success: false, message: passwordError });
     }
 
-    // Hash the new password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'If this email exists, a reset link has been sent.' });
+    }
 
-    // Update the user's password
-    user.password = hashedPassword;
+    // Update password - let the model handle hashing
+    user.password = newPassword;
     await user.save();
 
-    // Generate a new token and send it back to log the user in
     const token = generateToken(user);
 
     res.status(200).json({
