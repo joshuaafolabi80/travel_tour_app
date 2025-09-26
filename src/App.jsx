@@ -9,6 +9,7 @@ import DestinationOverview from './destinations/DestinationOverview';
 import FullCourseContent from './destinations/FullCourseContent';
 import QuizPlatform from './components/QuizPlatform';
 import QuizScores from './components/QuizScores';
+import AdminQuizCompleted from './components/AdminQuizCompleted';
 // import CourseRemarks from './components/CourseRemarks';
 // import GeneralCourses from './components/GeneralCourses';
 // import MasterclassCourses from './components/MasterclassCourses';
@@ -18,11 +19,10 @@ import QuizScores from './components/QuizScores';
 // import ContactUs from './components/ContactUs';
 // import RateShare from './components/RateShare';
 // import AdminDashboard from './components/AdminDashboard';
-// import AdminStudents from './components/AdminStudents';
-// import AdminMessageStudents from './components/AdminMessageStudents';
-// import AdminQuizCompleted from './components/AdminQuizCompleted';
+import AdminStudents from './components/AdminStudents';
+import AdminMessageStudents from './components/AdminMessageStudents';
 // import AdminCourseCompleted from './components/AdminCourseCompleted';
-// import AdminManageCourses from './components/AdminManageCourses';
+import AdminManageCourses from './components/AdminManageCourses';
 // import AdminSendInformation from './components/AdminSendInformation';
 // import AdminCommunity from './components/AdminCommunity';
 import './App.css';
@@ -129,7 +129,8 @@ const App = () => {
     importantInfo: 0,
     adminMessages: 0,
     quizCompleted: 0,
-    courseCompleted: 0
+    courseCompleted: 0,
+    manageCourses: 0
   });
 
   const validateToken = (token) => {
@@ -144,16 +145,81 @@ const App = () => {
     }
   };
 
+  // Update fetchNotificationCounts to respect cleared notifications
   const fetchNotificationCounts = async () => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || !userData) return;
     
     try {
-      const response = await api.get('/notifications/counts');
+      const response = await api.get('/notifications/counts', {
+        params: {
+          userId: userData.name || userData.userName || userData.email,
+          userRole: userRole
+        }
+      });
+      
       if (response.data.success) {
-        setNotificationCounts(response.data.counts);
+        const clearedNotifications = JSON.parse(localStorage.getItem('clearedNotifications') || '{}');
+        const currentTime = Date.now();
+        const oneHour = 60 * 60 * 1000; // Notifications stay cleared for 1 hour
+        
+        const updatedCounts = { ...response.data.counts };
+        
+        // Filter out notifications that were cleared recently
+        Object.keys(clearedNotifications).forEach(key => {
+          if (currentTime - clearedNotifications[key] < oneHour) {
+            updatedCounts[key] = 0;
+          }
+        });
+        
+        setNotificationCounts(updatedCounts);
       }
     } catch (error) {
       console.error('Error fetching notification counts:', error);
+    }
+  };
+
+  // Function to clear specific notification when menu is clicked
+  const clearNotification = (notificationType) => {
+    setNotificationCounts(prev => ({
+      ...prev,
+      [notificationType]: 0
+    }));
+    
+    // Store in localStorage to persist across refreshes
+    const clearedNotifications = JSON.parse(localStorage.getItem('clearedNotifications') || '{}');
+    clearedNotifications[notificationType] = Date.now();
+    localStorage.setItem('clearedNotifications', JSON.stringify(clearedNotifications));
+  };
+
+  // Function to mark notifications as read when menu is clicked
+  const markNotificationsAsRead = async (notificationType) => {
+    try {
+      if (notificationType === 'quizScores' && userData) {
+        await api.put('/notifications/mark-read', { 
+          type: 'quiz_completed',
+          userId: userData.name || userData.userName || userData.email
+        });
+      } else if (notificationType === 'quizCompleted' && userRole === 'admin') {
+        await api.put('/quiz/results/mark-read-admin');
+        // Also refetch quiz results to update the read status
+        fetchNotificationCounts();
+      }
+    } catch (error) {
+      console.error('Error marking notifications as read:', error);
+    }
+  };
+
+  // Add this function to handle notification clearing properly
+  const handleMenuClick = (item) => {
+    // Correctly clear notification badge using the specific notificationKey
+    if (item.notificationKey && item.notification > 0) {
+      clearNotification(item.notificationKey);
+      // Mark notifications as read in the database
+      markNotificationsAsRead(item.notificationKey);
+    }
+    // Execute the original action
+    if (item.action) {
+      item.action();
     }
   };
 
@@ -177,10 +243,13 @@ const App = () => {
   useEffect(() => {
     let interval;
     if (isLoggedIn) {
+      // Fetch notifications immediately when logged in
+      fetchNotificationCounts();
+      // Then set up interval for periodic updates
       interval = setInterval(fetchNotificationCounts, 30000);
     }
     return () => clearInterval(interval);
-  }, [isLoggedIn]);
+  }, [isLoggedIn, userData, userRole]);
 
   const handleStartClick = () => {
     setShowSplash(false);
@@ -198,6 +267,7 @@ const App = () => {
         const { token, user } = response.data;
         
         localStorage.setItem('authToken', token);
+        localStorage.setItem('userData', JSON.stringify(user));
         setAuthToken(token);
         setUserData(user);
 
@@ -232,6 +302,7 @@ const App = () => {
         const { token, user } = response.data;
         
         localStorage.setItem('authToken', token);
+        localStorage.setItem('userData', JSON.stringify(user));
         setAuthToken(token);
         setUserData(user);
 
@@ -260,6 +331,7 @@ const App = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('authToken');
+    localStorage.removeItem('userData');
     setAuthToken(null);
     setUserData(null);
     setIsLoggedIn(false);
@@ -309,13 +381,9 @@ const App = () => {
     setShowMenu(!showMenu);
   };
 
-  const navigateTo = (page, action) => {
-    if (action) {
-      action();
-    } else {
-      setCurrentPage(page);
-      setShowMenu(false);
-    }
+  const navigateTo = (page) => {
+    setCurrentPage(page);
+    setShowMenu(false);
   };
 
   const renderNotificationBadge = (count) => {
@@ -333,36 +401,42 @@ const App = () => {
     { 
       name: "Quiz and Score", 
       icon: "fa-solid fa-chart-line",
+      notificationKey: 'quizScores',
       notification: notificationCounts.quizScores,
       action: () => navigateTo('quiz-scores')
     },
     { 
       name: "Course and Remarks", 
       icon: "fa-solid fa-graduation-cap",
+      notificationKey: 'courseRemarks',
       notification: notificationCounts.courseRemarks,
       action: () => navigateTo('course-remarks')
     },
     { 
       name: "General Courses", 
       icon: "fa-solid fa-book",
+      notificationKey: 'generalCourses',
       notification: notificationCounts.generalCourses,
       action: () => navigateTo('general-courses')
     },
     { 
       name: "Masterclass Courses", 
       icon: "fa-solid fa-crown",
+      notificationKey: 'masterclassCourses',
       notification: notificationCounts.masterclassCourses,
       action: () => navigateTo('masterclass-courses')
     },
     { 
       name: "Important Information", 
       icon: "fa-solid fa-info-circle",
+      notificationKey: 'importantInfo',
       notification: notificationCounts.importantInfo,
       action: () => navigateTo('important-information')
     },
     { 
       name: "Message from Admin", 
       icon: "fa-solid fa-envelope",
+      notificationKey: 'adminMessages',
       notification: notificationCounts.adminMessages,
       action: () => navigateTo('admin-messages')
     },
@@ -402,18 +476,22 @@ const App = () => {
     { 
       name: "Quiz Completed", 
       icon: "fa-solid fa-tasks",
+      notificationKey: 'quizCompleted',
       notification: notificationCounts.quizCompleted,
       action: () => navigateTo('admin-quiz-completed')
     },
     { 
       name: "Course Completed", 
       icon: "fa-solid fa-certificate",
+      notificationKey: 'courseCompleted',
       notification: notificationCounts.courseCompleted,
       action: () => navigateTo('admin-course-completed')
     },
     { 
       name: "Manage my Courses", 
       icon: "fa-solid fa-cog",
+      notificationKey: 'manageCourses',
+      notification: notificationCounts.manageCourses,
       action: () => navigateTo('admin-manage-courses')
     },
     { 
@@ -476,7 +554,7 @@ const App = () => {
                 <button 
                   key={item.name} 
                   className="desktop-nav-item" 
-                  onClick={item.action}
+                  onClick={() => handleMenuClick(item)}
                   style={{position: 'relative'}}
                 >
                   <i className={item.icon}></i>
@@ -512,7 +590,7 @@ const App = () => {
                   {getMenuItems().map((item) => (
                     <li key={item.name}>
                       <button
-                        onClick={item.action}
+                        onClick={() => handleMenuClick(item)}
                         className="mobile-menu-item"
                         style={{position: 'relative'}}
                       >
@@ -605,11 +683,11 @@ const App = () => {
             
             {/* Admin Pages */}
             {/* {currentPage === 'admin-dashboard' && <AdminDashboard />} */}
-            {/* {currentPage === 'admin-students' && <AdminStudents />} */}
-            {/* {currentPage === 'admin-message-students' && <AdminMessageStudents />} */}
-            {/* {currentPage === 'admin-quiz-completed' && <AdminQuizCompleted />} */}
+            {currentPage === 'admin-students' && <AdminStudents />}
+            {currentPage === 'admin-message-students' && <AdminMessageStudents />}
+            {currentPage === 'admin-quiz-completed' && <AdminQuizCompleted />}
             {/* {currentPage === 'admin-course-completed' && <AdminCourseCompleted />} */}
-            {/* {currentPage === 'admin-manage-courses' && <AdminManageCourses />} */}
+            {currentPage === 'admin-manage-courses' && <AdminManageCourses />}
             {/* {currentPage === 'admin-send-information' && <AdminSendInformation />} */}
             {/* {currentPage === 'admin-community' && <AdminCommunity />} */}
             

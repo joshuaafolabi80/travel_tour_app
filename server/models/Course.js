@@ -1,4 +1,4 @@
-// server/models/Course.js
+// server/models/Course.js - UPDATED VERSION
 const mongoose = require('mongoose');
 
 const faqSchema = new mongoose.Schema({
@@ -39,30 +39,59 @@ const courseSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  heroImage: { // For the initial 'About' page
+  heroImage: {
     type: String,
     required: true,
   },
-  about: { // Brief description for the 'About' page
+  about: {
     type: String,
     required: true,
   },
-  enrollmentCount: { // Number of people enrolled
+  enrollmentCount: {
     type: Number,
     default: 0,
   },
-  faqs: [faqSchema], // Array of FAQ objects
+  faqs: [faqSchema],
+  
+  // NEW FIELDS FOR GENERAL/MASTERCLASS SYSTEM
+  courseType: {
+    type: String,
+    enum: ['general', 'masterclass'],
+    default: 'general'
+  },
+  accessCode: {
+    type: String,
+    sparse: true // Only for masterclass courses
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  uploadedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  views: {
+    type: Number,
+    default: 0
+  },
+  // END NEW FIELDS
 
-  // Full course details for the "Start this Course" page
   fullCourseDetails: {
-    itinerary: [{ // This can be a separate field
+    itinerary: [{
       day: Number,
       title: String,
       description: String
     }],
-    sections: [sectionSchema], // Array of all detailed sections
+    sections: [sectionSchema],
   }
+}, {
+  timestamps: true
 });
+
+// Add indexes for new fields
+courseSchema.index({ courseType: 1, uploadedAt: -1 });
+courseSchema.index({ isActive: 1 });
 
 const Course = mongoose.model('Course', courseSchema);
 

@@ -173,15 +173,15 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
       console.log('Quiz submission response:', response.data);
       
       if (response.data.success) {
-        // Call the parent component's completion handler
-        if (onQuizComplete && typeof onQuizComplete === 'function') {
-          onQuizComplete(finalScore, answers);
-        } else {
-          console.error('onQuizComplete is not a function:', onQuizComplete);
-          // Fallback: just show success message
-          alert('Quiz submitted successfully!');
-          window.history.back();
-        }
+        // Show success message in the same screen
+        setShowSuccessMessage(true);
+        
+        // Hide success message after 2 seconds and redirect
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+          // Redirect to home page
+          window.location.href = '/'; // Or use your app's navigation
+        }, 2000);
       } else {
         alert('Error submitting quiz results. Please try again.');
       }
@@ -192,6 +192,10 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
   };
 
   // Results Screen
+  //  Add success message state and update the results screen
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  // Results Screen with success message
   if (showResultsScreen) {
     const percentage = ((finalScore / questions.length) * 100).toFixed(1);
     
@@ -207,6 +211,16 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
         <div className="container">
           <div className="row justify-content-center">
             <div className="col-md-6">
+              
+              {/* Success Message Popup */}
+              {showSuccessMessage && (
+                <div className="alert alert-success alert-dismissible fade show mb-4" role="alert" style={{ borderRadius: '10px' }}>
+                  <i className="fas fa-check-circle me-2"></i>
+                  <strong>Success!</strong> Quiz submitted successfully!
+                  <button type="button" className="btn-close" onClick={() => setShowSuccessMessage(false)}></button>
+                </div>
+              )}
+              
               <div className="card shadow-lg border-0" style={{ borderRadius: '20px' }}>
                 <div className="card-header bg-primary text-white text-center py-4" style={{ borderTopLeftRadius: '20px', borderTopRightRadius: '20px' }}>
                   <h2 className="mb-0">
@@ -294,11 +308,11 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
 
                   <button 
                     className="btn btn-outline-secondary btn-lg w-100 mt-3 py-2"
-                    onClick={() => window.history.back()}
+                    onClick={() => window.location.href = '/'}
                     style={{ borderRadius: '12px' }}
                   >
                     <i className="fas fa-arrow-left me-2"></i>
-                    Back to Course
+                    Back to Home
                   </button>
                 </div>
               </div>

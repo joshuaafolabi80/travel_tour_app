@@ -656,9 +656,9 @@
 
 /* Notification Badges */
 .notification-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
+  position: relative;
+  top: -7px;
+  right: 10px;
   background-color: #ff4757;
   color: white;
   border-radius: 50%;
