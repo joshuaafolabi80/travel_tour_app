@@ -159,7 +159,7 @@ const AdminManageCourses = () => {
       formData.append('accessCode', uploadForm.accessCode);
       formData.append('courseFile', selectedFile);
 
-      const response = await api.post('/admin/upload-course', formData, {
+      const response = await api.post('/admin/upload-document-course', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -729,7 +729,12 @@ const AdminManageCourses = () => {
                                 </td>
                                 <td>
                                   <small>
-                                    {new Date(course.uploadedAt).toLocaleDateString()}
+                                    {course.uploadedAt 
+                                      ? new Date(course.uploadedAt).toLocaleDateString()
+                                      : course.createdAt 
+                                        ? new Date(course.createdAt).toLocaleDateString()
+                                        : 'Date not available'
+                                    }
                                   </small>
                                 </td>
                                 <td>

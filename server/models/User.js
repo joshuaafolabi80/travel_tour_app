@@ -117,6 +117,15 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
+// Role validation safeguard - Ensure role is always valid
+userSchema.pre('save', function(next) {
+  // Ensure role is always valid
+  if (!['student', 'admin'].includes(this.role)) {
+    this.role = 'student'; // Default to student if invalid
+  }
+  next();
+});
+
 // Compare password method
 userSchema.methods.correctPassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);

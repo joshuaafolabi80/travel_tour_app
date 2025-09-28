@@ -130,7 +130,7 @@ async function updateStudentNotificationCount(studentId) {
 
 // ===== COURSE MANAGEMENT ROUTES =====
 
-// Upload document course
+// Upload document course (UPDATED to handle file storage properly)
 router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, upload.single('courseFile'), async (req, res) => {
   try {
     const { title, description, courseType, accessCode } = req.body;
@@ -143,19 +143,22 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
       return res.status(400).json({ success: false, message: 'Title, description, and course type are required' });
     }
 
-    // Read file content
+    // Store the file path instead of reading content for non-text files
     let fileContent = '';
-    const filePath = req.file.path;
+    let storeOriginalFile = false;
     
-    try {
-      if (req.file.mimetype === 'text/plain') {
-        fileContent = fs.readFileSync(filePath, 'utf8');
-      } else {
-        fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
+    // For .txt files, we can store the content directly
+    if (req.file.mimetype === 'text/plain' || path.extname(req.file.originalname).toLowerCase() === '.txt') {
+      try {
+        fileContent = fs.readFileSync(req.file.path, 'utf8');
+      } catch (readError) {
+        console.error('Error reading text file:', readError);
+        fileContent = 'File content could not be extracted. Please download the file.';
       }
-    } catch (readError) {
-      console.error('Error reading file:', readError);
-      fileContent = 'File content could not be extracted. Please download the file.';
+    } else {
+      // For Word documents and other binary files, store the file path
+      fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
+      storeOriginalFile = true;
     }
 
     // Create document course
@@ -168,10 +171,18 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
       fileSize: req.file.size,
       fileType: path.extname(req.file.originalname),
       uploadedBy: req.user._id,
-      accessCode: courseType === 'masterclass' ? accessCode || null : null
+      accessCode: courseType === 'masterclass' ? accessCode || null : null,
+      // Store the file path for binary files
+      filePath: storeOriginalFile ? req.file.path : null,
+      uploadedAt: new Date()
     });
 
     await course.save();
+
+    // 🚨 ADD THIS: Store the actual uploaded filename for exact matching
+    await DocumentCourse.findByIdAndUpdate(course._id, {
+      storedFileName: req.file.filename // This is the actual stored filename
+    });
 
     // If masterclass course and access code provided, create access code record
     if (courseType === 'masterclass' && accessCode) {
@@ -207,6 +218,97 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
     }
     
     res.status(500).json({ success: false, message: 'Error uploading document course' });
+  }
+});
+
+// Upload course (compatible with frontend - UPDATED)
+router.post('/admin/upload-course', authMiddleware, adminMiddleware, upload.single('courseFile'), async (req, res) => {
+  try {
+    const { title, description, courseType, accessCode } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Course file is required' });
+    }
+
+    if (!title || !description || !courseType) {
+      return res.status(400).json({ success: false, message: 'Title, description, and course type are required' });
+    }
+
+    // Store the file path instead of reading content for non-text files
+    let fileContent = '';
+    let storeOriginalFile = false;
+    
+    // For .txt files, we can store the content directly
+    if (req.file.mimetype === 'text/plain' || path.extname(req.file.originalname).toLowerCase() === '.txt') {
+      try {
+        fileContent = fs.readFileSync(req.file.path, 'utf8');
+      } catch (readError) {
+        console.error('Error reading text file:', readError);
+        fileContent = 'File content could not be extracted. Please download the file.';
+      }
+    } else {
+      // For Word documents and other binary files, store the file path
+      fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
+      storeOriginalFile = true;
+    }
+
+    // Create document course
+    const course = new DocumentCourse({
+      title,
+      description,
+      content: fileContent,
+      courseType,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      fileType: path.extname(req.file.originalname),
+      uploadedBy: req.user._id,
+      accessCode: courseType === 'masterclass' ? accessCode || null : null,
+      // Store the file path for binary files
+      filePath: storeOriginalFile ? req.file.path : null,
+      uploadedAt: new Date()
+    });
+
+    await course.save();
+
+    // 🚨 ADD THIS: Store the actual uploaded filename for exact matching
+    await DocumentCourse.findByIdAndUpdate(course._id, {
+      storedFileName: req.file.filename // This is the actual stored filename
+    });
+
+    // If masterclass course and access code provided, create access code record
+    if (courseType === 'masterclass' && accessCode) {
+      const accessCodeRecord = new AccessCode({
+        code: accessCode,
+        courseId: course._id,
+        courseType: 'document',
+        generatedBy: req.user._id,
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+      });
+      await accessCodeRecord.save();
+    }
+
+    // Update notification counts for all users
+    await updateCourseNotificationCounts(courseType);
+
+    res.json({
+      success: true,
+      message: 'Course uploaded successfully',
+      course: {
+        id: course._id,
+        title: course.title,
+        courseType: course.courseType,
+        fileName: course.fileName
+      }
+    });
+
+  } catch (error) {
+    console.error('Error uploading course:', error);
+    
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    res.status(500).json({ success: false, message: 'Error uploading course' });
   }
 });
 
@@ -399,7 +501,7 @@ router.put('/admin/courses/:id', authMiddleware, adminMiddleware, async (req, re
   }
 });
 
-// Delete course
+// Delete course (UPDATED to handle file cleanup)
 router.delete('/admin/courses/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     let course = await Course.findById(req.params.id);
@@ -414,11 +516,13 @@ router.delete('/admin/courses/:id', authMiddleware, adminMiddleware, async (req,
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    // Delete associated file if it's a document course
-    if (courseType === 'document') {
-      const filePath = `uploads/courses/${course.fileName}`;
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+    // Delete associated file if it's a document course with filePath
+    if (courseType === 'document' && course.filePath && fs.existsSync(course.filePath)) {
+      try {
+        fs.unlinkSync(course.filePath);
+      } catch (fileError) {
+        console.error('Error deleting course file:', fileError);
+        // Continue with course deletion even if file deletion fails
       }
     }
 

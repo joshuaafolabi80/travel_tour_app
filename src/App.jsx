@@ -11,8 +11,8 @@ import QuizPlatform from './components/QuizPlatform';
 import QuizScores from './components/QuizScores';
 import AdminQuizCompleted from './components/AdminQuizCompleted';
 // import CourseRemarks from './components/CourseRemarks';
-// import GeneralCourses from './components/GeneralCourses';
-// import MasterclassCourses from './components/MasterclassCourses';
+import GeneralCourses from './components/GeneralCourses';
+import MasterclassCourses from './components/MasterclassCourses';
 // import ImportantInformation from './components/ImportantInformation';
 // import AdminMessages from './components/AdminMessages';
 // import Community from './components/Community';
@@ -163,6 +163,21 @@ const App = () => {
         const oneHour = 60 * 60 * 1000; // Notifications stay cleared for 1 hour
         
         const updatedCounts = { ...response.data.counts };
+
+        // Add course notification counts for students
+        if (userRole === 'student') {
+          try {
+            const courseResponse = await api.get('/courses/notification-counts');
+            if (courseResponse.data.success) {
+              updatedCounts.generalCourses = courseResponse.data.generalCourses || 0;
+              updatedCounts.masterclassCourses = courseResponse.data.masterclassCourses || 0;
+            }
+          } catch (courseError) {
+            console.error('Error fetching course notifications:', courseError);
+            updatedCounts.generalCourses = 0;
+            updatedCounts.masterclassCourses = 0;
+          }
+        }
         
         // Filter out notifications that were cleared recently
         Object.keys(clearedNotifications).forEach(key => {
@@ -673,8 +688,8 @@ const App = () => {
             {/* User Pages */}
             {currentPage === 'quiz-scores' && <QuizScores />}
             {/* {currentPage === 'course-remarks' && <CourseRemarks />} */}
-            {/* {currentPage === 'general-courses' && <GeneralCourses />} */}
-            {/* {currentPage === 'masterclass-courses' && <MasterclassCourses />} */}
+            {currentPage === 'general-courses' && <GeneralCourses />}
+            {currentPage === 'masterclass-courses' && <MasterclassCourses />}
             {/* {currentPage === 'important-information' && <ImportantInformation />} */}
             {/* {currentPage === 'admin-messages' && <AdminMessages />} */}
             {/* {currentPage === 'community' && <Community />} */}

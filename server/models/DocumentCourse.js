@@ -24,6 +24,10 @@ const documentCourseSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  storedFileName: {
+    type: String,
+    required: false
+  },
   fileSize: {
     type: Number,
     required: true
@@ -48,6 +52,10 @@ const documentCourseSchema = new mongoose.Schema({
   views: {
     type: Number,
     default: 0
+  },
+  filePath: {
+    type: String,
+    required: false
   }
 }, {
   timestamps: true
