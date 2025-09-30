@@ -9,6 +9,7 @@ const GeneralCourses = () => {
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [documentLoading, setDocumentLoading] = useState(false);
   const [documentContent, setDocumentContent] = useState(null);
+  const [contentType, setContentType] = useState('text'); // 'text' or 'html'
 
   useEffect(() => {
     fetchCourses();
@@ -41,6 +42,7 @@ const GeneralCourses = () => {
         setSelectedCourse(response.data.course);
         setShowCourseModal(true);
         setDocumentContent(null);
+        setContentType('text');
       }
     } catch (error) {
       console.error('Error fetching course details:', error);
@@ -48,7 +50,7 @@ const GeneralCourses = () => {
     }
   };
 
-  // READ DOCUMENT CONTENT - FIXED TO DISPLAY FULL CONTENT
+  // READ DOCUMENT CONTENT - WITH IMAGE SUPPORT
   const readDocumentInApp = async () => {
     if (!selectedCourse) return;
     
@@ -61,10 +63,12 @@ const GeneralCourses = () => {
       console.log('📄 API Response:', response.data);
       
       if (response.data.success) {
-        if (response.data.contentType === 'text') {
-          // This is the FULL document content!
+        setContentType(response.data.contentType || 'text');
+        
+        if (response.data.contentType === 'html' || response.data.contentType === 'text') {
           setDocumentContent(response.data.content);
-          console.log('📝 Full document content loaded:', response.data.contentLength, 'characters');
+          console.log('📝 Document content loaded:', response.data.contentLength, 'characters');
+          console.log('🖼️ Has images:', response.data.hasImages);
         } else if (response.data.contentType === 'error') {
           setDocumentContent('Error: ' + response.data.content);
         } else {
@@ -87,6 +91,7 @@ const GeneralCourses = () => {
     setSelectedCourse(null);
     setDocumentContent(null);
     setDocumentLoading(false);
+    setContentType('text');
   };
 
   // Format date function to handle different date fields
@@ -152,7 +157,7 @@ const GeneralCourses = () => {
                       General Courses
                     </h1>
                     <p className="lead mb-0 opacity-75">
-                      Read documents directly in the app. No download required.
+                      Read documents directly in the app. Images and formatting are preserved.
                     </p>
                   </div>
                   <div className="col-md-4 text-md-end">
@@ -211,6 +216,12 @@ const GeneralCourses = () => {
                               {course.fileName}
                             </small>
                           )}
+                          {course.htmlContent && (
+                            <small className="text-success d-block">
+                              <i className="fas fa-image me-1"></i>
+                              Includes images and formatting
+                            </small>
+                          )}
                         </div>
                       </div>
                       <div className="card-footer bg-transparent border-0 pt-0">
@@ -240,6 +251,12 @@ const GeneralCourses = () => {
                   <h5 className="modal-title">
                     <i className="fas fa-book me-2"></i>
                     {selectedCourse.title}
+                    {contentType === 'html' && (
+                      <span className="badge bg-success ms-2">
+                        <i className="fas fa-image me-1"></i>
+                        With Images
+                      </span>
+                    )}
                   </h5>
                   <button
                     type="button"
@@ -265,6 +282,11 @@ const GeneralCourses = () => {
                           {selectedCourse.fileName && (
                             <p className="text-muted mb-2">
                               <strong>File:</strong> {selectedCourse.fileName}
+                            </p>
+                          )}
+                          {selectedCourse.htmlContent && (
+                            <p className="text-success mb-2">
+                              <strong>Format:</strong> Includes images and rich formatting
                             </p>
                           )}
                         </div>
@@ -293,7 +315,7 @@ const GeneralCourses = () => {
                       </div>
                     </div>
                   ) : (
-                    // Document Content View - DISPLAYS FULL CONTENT WITH IMPROVED STYLING
+                    // Document Content View - SUPPORTS HTML AND IMAGES
                     <div>
                       {documentLoading ? (
                         <div className="text-center py-5">
@@ -308,7 +330,7 @@ const GeneralCourses = () => {
                           <div className="bg-light rounded p-3 mb-3 d-flex justify-content-between align-items-center">
                             <small className="text-muted">
                               <i className="fas fa-info-circle me-1"></i>
-                              Document displayed directly in app
+                              {contentType === 'html' ? 'Document with images and formatting' : 'Text document'}
                             </small>
                             <small className="text-muted">
                               <i className="fas fa-file-text me-1"></i>
@@ -328,29 +350,38 @@ const GeneralCourses = () => {
                               lineHeight: '1.7',
                               fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
                               fontSize: '16px',
-                              whiteSpace: 'pre-wrap',
-                              textAlign: 'justify',
                               boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                               color: '#2c3e50'
                             }}
                           >
-                            {documentContent.split('\n').map((paragraph, index) => (
-                              paragraph.trim() ? (
-                                <div 
-                                  key={index} 
-                                  className="paragraph"
-                                  style={{
-                                    marginBottom: '1.2rem',
-                                    paddingBottom: '0.5rem',
-                                    borderBottom: paragraph.trim().endsWith(':') ? '2px solid #3498db' : 'none'
-                                  }}
-                                >
-                                  {paragraph}
-                                </div>
-                              ) : (
-                                <br key={index} />
-                              )
-                            ))}
+                            {contentType === 'html' ? (
+                              <div 
+                                dangerouslySetInnerHTML={{ __html: documentContent }}
+                                style={{
+                                  textAlign: 'left'
+                                }}
+                              />
+                            ) : (
+                              <div style={{ textAlign: 'justify', whiteSpace: 'pre-wrap' }}>
+                                {documentContent.split('\n').map((paragraph, index) => (
+                                  paragraph.trim() ? (
+                                    <div 
+                                      key={index} 
+                                      className="paragraph"
+                                      style={{
+                                        marginBottom: '1.2rem',
+                                        paddingBottom: '0.5rem',
+                                        borderBottom: paragraph.trim().endsWith(':') ? '2px solid #3498db' : 'none'
+                                      }}
+                                    >
+                                      {paragraph}
+                                    </div>
+                                  ) : (
+                                    <br key={index} />
+                                  )
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

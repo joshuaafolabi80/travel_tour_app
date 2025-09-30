@@ -56,6 +56,23 @@ const documentCourseSchema = new mongoose.Schema({
   filePath: {
     type: String,
     required: false
+  },
+  // New field for storing image references
+  images: [{
+    filename: String,
+    originalName: String,
+    path: String,
+    mimeType: String,
+    size: Number,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // Field to store HTML content with embedded images
+  htmlContent: {
+    type: String,
+    required: false
   }
 }, {
   timestamps: true

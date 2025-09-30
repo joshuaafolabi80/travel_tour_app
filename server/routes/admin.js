@@ -10,6 +10,7 @@ const nodemailer = require('nodemailer');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const mammoth = require('mammoth');
 
 // Middleware to check if user is authenticated and is admin
 const authMiddleware = async (req, res, next) => {
@@ -54,7 +55,7 @@ const createTransporter = () => {
   });
 };
 
-// Configure multer for file uploads (for document courses)
+// Configure multer for file uploads (UPDATED for images too)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = 'uploads/courses/';
@@ -72,15 +73,15 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024
+    fileSize: 50 * 1024 * 1024 // Increased to 50MB for documents with images
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.doc', '.docx', '.txt'];
+    const allowedTypes = ['.doc', '.docx', '.txt', '.pdf'];
     const fileExt = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(fileExt)) {
       cb(null, true);
     } else {
-      cb(new Error('Only .doc, .docx, and .txt files are allowed'));
+      cb(new Error('Only .doc, .docx, .txt, and .pdf files are allowed'));
     }
   }
 });
@@ -145,6 +146,7 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
 
     // Store the file path instead of reading content for non-text files
     let fileContent = '';
+    let htmlContent = '';
     let storeOriginalFile = false;
     
     // For .txt files, we can store the content directly
@@ -156,9 +158,29 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
         fileContent = 'File content could not be extracted. Please download the file.';
       }
     } else {
-      // For Word documents and other binary files, store the file path
-      fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
-      storeOriginalFile = true;
+      // For Word documents, extract both text and HTML content
+      try {
+        // Extract raw text
+        const textResult = await mammoth.extractRawText({ path: req.file.path });
+        fileContent = textResult.value;
+        
+        // Extract HTML content with images and formatting
+        const htmlResult = await mammoth.convertToHtml({ 
+          path: req.file.path
+        });
+        
+        htmlContent = htmlResult.value;
+        storeOriginalFile = true;
+        
+        console.log('✅ Document converted to HTML, length:', htmlContent.length);
+        console.log('📝 Conversion messages:', htmlResult.messages);
+        
+      } catch (conversionError) {
+        console.error('Error converting document:', conversionError);
+        fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
+        htmlContent = `<p>File uploaded: ${req.file.originalname}. Download the file to view full content with images.</p>`;
+        storeOriginalFile = true;
+      }
     }
 
     // Create document course
@@ -166,22 +188,22 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
       title,
       description,
       content: fileContent,
+      htmlContent: htmlContent,
       courseType,
       fileName: req.file.originalname,
       fileSize: req.file.size,
       fileType: path.extname(req.file.originalname),
       uploadedBy: req.user._id,
       accessCode: courseType === 'masterclass' ? accessCode || null : null,
-      // Store the file path for binary files
       filePath: storeOriginalFile ? req.file.path : null,
       uploadedAt: new Date()
     });
 
     await course.save();
 
-    // 🚨 ADD THIS: Store the actual uploaded filename for exact matching
+    // Store the actual uploaded filename for exact matching
     await DocumentCourse.findByIdAndUpdate(course._id, {
-      storedFileName: req.file.filename // This is the actual stored filename
+      storedFileName: req.file.filename
     });
 
     // If masterclass course and access code provided, create access code record
@@ -206,7 +228,9 @@ router.post('/admin/upload-document-course', authMiddleware, adminMiddleware, up
         id: course._id,
         title: course.title,
         courseType: course.courseType,
-        fileName: course.fileName
+        fileName: course.fileName,
+        hasImages: htmlContent.includes('<img') || htmlContent.includes('image'),
+        htmlContentLength: htmlContent.length
       }
     });
 
@@ -236,6 +260,7 @@ router.post('/admin/upload-course', authMiddleware, adminMiddleware, upload.sing
 
     // Store the file path instead of reading content for non-text files
     let fileContent = '';
+    let htmlContent = '';
     let storeOriginalFile = false;
     
     // For .txt files, we can store the content directly
@@ -247,9 +272,29 @@ router.post('/admin/upload-course', authMiddleware, adminMiddleware, upload.sing
         fileContent = 'File content could not be extracted. Please download the file.';
       }
     } else {
-      // For Word documents and other binary files, store the file path
-      fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
-      storeOriginalFile = true;
+      // For Word documents, extract both text and HTML content
+      try {
+        // Extract raw text
+        const textResult = await mammoth.extractRawText({ path: req.file.path });
+        fileContent = textResult.value;
+        
+        // Extract HTML content with images and formatting
+        const htmlResult = await mammoth.convertToHtml({ 
+          path: req.file.path
+        });
+        
+        htmlContent = htmlResult.value;
+        storeOriginalFile = true;
+        
+        console.log('✅ Document converted to HTML, length:', htmlContent.length);
+        console.log('📝 Conversion messages:', htmlResult.messages);
+        
+      } catch (conversionError) {
+        console.error('Error converting document:', conversionError);
+        fileContent = `File uploaded: ${req.file.originalname}. Download the file to view full content.`;
+        htmlContent = `<p>File uploaded: ${req.file.originalname}. Download the file to view full content with images.</p>`;
+        storeOriginalFile = true;
+      }
     }
 
     // Create document course
@@ -257,22 +302,22 @@ router.post('/admin/upload-course', authMiddleware, adminMiddleware, upload.sing
       title,
       description,
       content: fileContent,
+      htmlContent: htmlContent,
       courseType,
       fileName: req.file.originalname,
       fileSize: req.file.size,
       fileType: path.extname(req.file.originalname),
       uploadedBy: req.user._id,
       accessCode: courseType === 'masterclass' ? accessCode || null : null,
-      // Store the file path for binary files
       filePath: storeOriginalFile ? req.file.path : null,
       uploadedAt: new Date()
     });
 
     await course.save();
 
-    // 🚨 ADD THIS: Store the actual uploaded filename for exact matching
+    // Store the actual uploaded filename for exact matching
     await DocumentCourse.findByIdAndUpdate(course._id, {
-      storedFileName: req.file.filename // This is the actual stored filename
+      storedFileName: req.file.filename
     });
 
     // If masterclass course and access code provided, create access code record
@@ -297,7 +342,9 @@ router.post('/admin/upload-course', authMiddleware, adminMiddleware, upload.sing
         id: course._id,
         title: course.title,
         courseType: course.courseType,
-        fileName: course.fileName
+        fileName: course.fileName,
+        hasImages: htmlContent.includes('<img') || htmlContent.includes('image'),
+        htmlContentLength: htmlContent.length
       }
     });
 

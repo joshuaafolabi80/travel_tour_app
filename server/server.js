@@ -16,15 +16,16 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve uploaded files statically
+// Serve uploaded files statically (UPDATED to include images)
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api/uploads/courses/images', express.static(path.join(__dirname, 'uploads', 'courses', 'images')));
 
 // Test route
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Server is working!' });
 });
 
-// 🚨 INTELLIGENT FILE MATCHING - NO MANUAL MAPPINGS
+// 🚨 ENHANCED DIRECT COURSE VIEW - SUPPORTS IMAGES
 app.get('/api/direct-courses/:id/view', async (req, res) => {
   try {
     const courseId = req.params.id;
@@ -41,7 +42,23 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
     console.log('✅ Course found:', course.title);
     console.log('📄 Stored file name:', course.fileName);
     console.log('💾 Stored file name (actual):', course.storedFileName);
+    console.log('🖼️ Has HTML content:', !!course.htmlContent);
     
+    // Check if course has HTML content with images
+    if (course.htmlContent && course.htmlContent.length > 100) {
+      console.log('📷 Returning HTML content with embedded images');
+      return res.json({
+        success: true,
+        content: course.htmlContent,
+        contentType: 'html',
+        title: course.title,
+        canViewInApp: true,
+        source: 'html-content',
+        contentLength: course.htmlContent.length,
+        hasImages: true
+      });
+    }
+
     // 🎯 INTELLIGENT FILE MATCHING SYSTEM
     const uploadsPath = path.join(__dirname, 'uploads/courses');
     
@@ -138,37 +155,76 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
       
       try {
         console.log('🔧 Reading DOCX file content...');
-        const result = await mammoth.extractRawText({ path: actualFilePath });
-        const textContent = result.value;
         
-        console.log('✅ DOCX content extracted, length:', textContent.length);
+        // Convert to HTML to preserve images and formatting
+        const result = await mammoth.convertToHtml({ 
+          path: actualFilePath
+        });
         
-        if (textContent && textContent.length > 10) {
+        const htmlContent = result.value;
+        
+        console.log('✅ HTML content extracted, length:', htmlContent.length);
+        console.log('📝 Conversion messages:', result.messages);
+        
+        if (htmlContent && htmlContent.length > 10) {
+          // Update the course with HTML content for future requests
+          await DocumentCourse.findByIdAndUpdate(courseId, {
+            htmlContent: htmlContent
+          });
+          
+          return res.json({
+            success: true,
+            content: htmlContent,
+            contentType: 'html',
+            title: course.title,
+            canViewInApp: true,
+            source: 'html-conversion',
+            contentLength: htmlContent.length,
+            hasImages: htmlContent.includes('<img') || htmlContent.includes('image')
+          });
+        } else {
+          // Fallback to text content
+          const textResult = await mammoth.extractRawText({ path: actualFilePath });
+          const textContent = textResult.value;
+          
           return res.json({
             success: true,
             content: textContent,
-            contentType: 'text', 
+            contentType: 'text',
             title: course.title,
             canViewInApp: true,
-            source: 'docx-file',
+            source: 'text-fallback',
             contentLength: textContent.length,
-            actualFileUsed: actualFileName
-          });
-        } else {
-          return res.json({
-            success: true,
-            content: 'DOCX file is empty or could not be read properly.',
-            contentType: 'info'
+            hasImages: false
           });
         }
         
       } catch (conversionError) {
         console.error('❌ DOCX conversion failed:', conversionError);
-        return res.json({
-          success: true,
-          content: 'Error reading DOCX file: ' + conversionError.message,
-          contentType: 'error'
-        });
+        
+        // Try text extraction as fallback
+        try {
+          const textResult = await mammoth.extractRawText({ path: actualFilePath });
+          const textContent = textResult.value;
+          
+          return res.json({
+            success: true,
+            content: textContent,
+            contentType: 'text',
+            title: course.title,
+            canViewInApp: true,
+            source: 'text-only',
+            contentLength: textContent.length,
+            hasImages: false
+          });
+        } catch (textError) {
+          console.error('❌ Text extraction also failed:', textError);
+          return res.json({
+            success: true,
+            content: 'Error reading document. The file may be corrupted or in an unsupported format.',
+            contentType: 'error'
+          });
+        }
       }
     } else {
       console.error('❌ No matching DOCX file found for course:', course.title);
@@ -275,6 +331,7 @@ mongoose.connect(process.env.MONGODB_URI, {
     const fs = require('fs');
     const uploadsDir = path.join(__dirname, 'uploads');
     const coursesDir = path.join(uploadsDir, 'courses');
+    const imagesDir = path.join(coursesDir, 'images');
     
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });
@@ -284,6 +341,11 @@ mongoose.connect(process.env.MONGODB_URI, {
     if (!fs.existsSync(coursesDir)) {
       fs.mkdirSync(coursesDir, { recursive: true });
       console.log('✅ Courses uploads directory created');
+    }
+    
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
+      console.log('✅ Images directory created');
     }
   })
   .catch((error) => {
@@ -329,6 +391,7 @@ app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
   console.log(`📍 API available at: http://localhost:${PORT}/api`);
   console.log(`📍 Document viewing: http://localhost:${PORT}/api/direct-courses/:id/view`);
+  console.log(`📍 Images serving: http://localhost:${PORT}/api/uploads/courses/images/`);
 }).on('error', (error) => {
   console.log('❌ Server failed to start:', error.message);
 });

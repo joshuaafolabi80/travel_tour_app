@@ -105,7 +105,12 @@ const userSchema = new mongoose.Schema({
   lastCourseNotificationCheck: {
     type: Date,
     default: Date.now
-  }
+  },
+  // NEW: Field to track accessible masterclass courses
+  accessibleMasterclassCourses: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'DocumentCourse'
+  }]
 }, {
   timestamps: true
 });
@@ -230,6 +235,24 @@ userSchema.methods.revokeMasterclassAccess = function(courseId, courseType) {
   return this;
 };
 
+// NEW: Method to add accessible masterclass course
+userSchema.methods.addAccessibleMasterclassCourse = function(courseId) {
+  if (!this.accessibleMasterclassCourses.includes(courseId)) {
+    this.accessibleMasterclassCourses.push(courseId);
+  }
+  return this.save();
+};
+
+// NEW: Method to check if user has access to masterclass course
+userSchema.methods.hasAccessToMasterclassCourse = function(courseId) {
+  return this.accessibleMasterclassCourses.includes(courseId);
+};
+
+// NEW: Method to get accessible masterclass courses
+userSchema.methods.getAccessibleMasterclassCourses = function() {
+  return this.accessibleMasterclassCourses;
+};
+
 // Method to get total notification count
 userSchema.methods.getTotalNotificationCount = function() {
   return this.unreadMessages + this.generalCoursesCount + this.masterclassCoursesCount;
@@ -246,6 +269,7 @@ userSchema.methods.getCourseStats = function() {
     generalCoursesCount: this.generalCoursesCount,
     masterclassCoursesCount: this.masterclassCoursesCount,
     masterclassAccessCount: activeMasterclassAccesses.length,
+    accessibleMasterclassCoursesCount: this.accessibleMasterclassCourses.length,
     totalNotifications: this.getTotalNotificationCount(),
     lastNotificationCheck: this.lastCourseNotificationCheck
   };
@@ -300,6 +324,7 @@ userSchema.index({ role: 1, active: 1 });
 userSchema.index({ 'masterclassAccess.courseId': 1 });
 userSchema.index({ 'masterclassAccess.expiresAt': 1 });
 userSchema.index({ lastCourseNotificationCheck: 1 });
+userSchema.index({ accessibleMasterclassCourses: 1 });
 
 // Transform output to remove password and sensitive data
 userSchema.methods.toJSON = function() {
