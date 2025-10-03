@@ -1,4 +1,3 @@
-// server/routes/auth.js
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -342,4 +341,7 @@ router.get('/verify', authMiddleware, async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  authMiddleware, // <-- This is the critical export used by messages.js
+};

@@ -1,7 +1,8 @@
+// src/components/MasterclassCourses.jsx - COMPLETE UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
-const MasterclassCourses = () => {
+const MasterclassCourses = ({ navigateTo }) => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -92,6 +93,17 @@ const MasterclassCourses = () => {
     setShowAccessModal(true);
   };
 
+  // 🚨 FIXED: Contact Admin button function
+  const contactAdmin = () => {
+    if (navigateTo) {
+      navigateTo('contact-us');
+    } else {
+      console.error('Navigate function not available');
+      // Fallback: try to use window location
+      window.location.hash = 'contact-us';
+    }
+  };
+
   const validateAccessCode = async () => {
     if (!accessCode.trim()) {
       setValidationError('Please enter an access code');
@@ -145,9 +157,9 @@ const MasterclassCourses = () => {
     } catch (error) {
       console.error('Error fetching course details:', error);
       if (error.response?.status === 403) {
-        alert('Access denied. You need a valid access code to view this course.');
+        showCustomAlert('Access denied. You need a valid access code to view this course.', 'error');
       } else {
-        alert('Failed to load course content. Please try again.');
+        showCustomAlert('Failed to load course content. Please try again.', 'error');
       }
     }
   };
@@ -364,7 +376,10 @@ const MasterclassCourses = () => {
                   </button>
                   
                   <div className="mt-3">
-                    <button className="btn btn-outline-dark btn-sm">
+                    <button 
+                      className="btn btn-outline-dark btn-sm"
+                      onClick={contactAdmin}
+                    >
                       <i className="fas fa-envelope me-2"></i>Contact Administrator
                     </button>
                   </div>

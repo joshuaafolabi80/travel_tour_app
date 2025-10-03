@@ -1082,4 +1082,382 @@ router.get('/notifications/admin-messages/:userId', authMiddleware, async (req, 
   }
 });
 
+// ===== MESSAGE MANAGEMENT ROUTES FOR ADMIN =====
+
+// Get messages from students (for admin)
+router.get('/admin/messages-from-students', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { filter = 'all' } = req.query;
+    
+    console.log(`🔒 ADMIN: Fetching messages from students with filter: ${filter}`);
+
+    // Build query based on filter
+    let query = { 
+      messageType: 'student_to_admin',
+      fromStudent: { $exists: true }
+    };
+
+    switch (filter) {
+      case 'unread':
+        query.read = false;
+        break;
+      case 'read':
+        query.read = true;
+        query.reply = { $exists: false };
+        break;
+      case 'replied':
+        query.reply = { $exists: true };
+        break;
+      // 'all' - no additional filters
+    }
+
+    const messages = await Message.find(query)
+      .populate('fromStudent', 'username email profile firstName lastName phone')
+      .populate('toAdmin', 'username email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log(`✅ ADMIN: Returning ${messages.length} messages from students`);
+
+    res.json({
+      success: true,
+      messages: messages,
+      filter: filter,
+      totalCount: messages.length
+    });
+
+  } catch (error) {
+    console.error('Error in /admin/messages-from-students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching messages from students',
+      error: error.message
+    });
+  }
+});
+
+// Mark message as read (admin)
+router.put('/admin/messages/:messageId/mark-read', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+
+    console.log(`🔒 ADMIN: Marking message as read: ${messageId}`);
+
+    const message = await Message.findByIdAndUpdate(
+      messageId,
+      { 
+        read: true,
+        readAt: new Date()
+      },
+      { new: true }
+    ).populate('fromStudent', 'username email profile');
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Message marked as read',
+      data: message
+    });
+
+  } catch (error) {
+    console.error('Error marking message as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking message as read',
+      error: error.message
+    });
+  }
+});
+
+// Send reply to student (admin)
+router.post('/admin/messages/:messageId/reply', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { reply } = req.body;
+
+    if (!reply || !reply.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reply message is required'
+      });
+    }
+
+    console.log(`🔒 ADMIN: Sending reply to message: ${messageId}`);
+
+    // Find the original message
+    const originalMessage = await Message.findById(messageId)
+      .populate('fromStudent', 'username email _id');
+
+    if (!originalMessage) {
+      return res.status(404).json({
+        success: false,
+        message: 'Original message not found'
+      });
+    }
+
+    // Update the original message with reply
+    originalMessage.reply = reply.trim();
+    originalMessage.repliedAt = new Date();
+    originalMessage.read = true;
+    await originalMessage.save();
+
+    // Create a new message from admin to student
+    const adminMessage = new Message({
+      fromAdmin: req.user._id,
+      toStudent: originalMessage.fromStudent._id,
+      subject: `Re: ${originalMessage.subject}`,
+      message: reply.trim(),
+      messageType: 'admin_to_student',
+      relatedMessage: messageId
+    });
+
+    await adminMessage.save();
+
+    // Update student's notification count
+    await User.findByIdAndUpdate(originalMessage.fromStudent._id, {
+      $inc: { unreadMessages: 1, adminMessageCount: 1 }
+    });
+
+    console.log(`✅ ADMIN: Reply sent to student: ${originalMessage.fromStudent.email}`);
+
+    res.json({
+      success: true,
+      message: 'Reply sent successfully',
+      data: {
+        originalMessage: originalMessage,
+        sentMessage: adminMessage
+      }
+    });
+
+  } catch (error) {
+    console.error('Error sending reply:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error sending reply',
+      error: error.message
+    });
+  }
+});
+
+// Get message count for admin dashboard
+router.get('/admin/messages/count', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    console.log('🔒 ADMIN: Fetching message counts');
+
+    const totalCount = await Message.countDocuments({ 
+      messageType: 'student_to_admin',
+      fromStudent: { $exists: true }
+    });
+
+    const unreadCount = await Message.countDocuments({ 
+      messageType: 'student_to_admin',
+      fromStudent: { $exists: true },
+      read: false
+    });
+
+    const repliedCount = await Message.countDocuments({ 
+      messageType: 'student_to_admin',
+      fromStudent: { $exists: true },
+      reply: { $exists: true }
+    });
+
+    res.json({
+      success: true,
+      counts: {
+        total: totalCount,
+        unread: unreadCount,
+        replied: repliedCount,
+        pending: totalCount - repliedCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching message counts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching message counts',
+      error: error.message
+    });
+  }
+});
+
+// Generate access code (admin)
+router.post('/admin/generate-access-code', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { courseId, studentId } = req.body;
+
+    if (!courseId || !studentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Course ID and Student ID are required'
+      });
+    }
+
+    console.log(`🔒 ADMIN: Generating access code for student: ${studentId}, course: ${courseId}`);
+
+    // Generate unique access code
+    const generateAccessCode = () => {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let result = '';
+      for (let i = 0; i < 8; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+
+    const accessCode = generateAccessCode();
+
+    // Find course title
+    let courseTitle = 'Masterclass Course';
+    let course = await Course.findById(courseId);
+    if (!course) {
+      course = await DocumentCourse.findById(courseId);
+    }
+    if (course) {
+      courseTitle = course.title || course.name || 'Masterclass Course';
+    }
+
+    // Create access code record
+    const accessCodeRecord = new AccessCode({
+      code: accessCode,
+      courseId: courseId,
+      studentId: studentId,
+      courseType: course?.courseType || 'masterclass',
+      generatedBy: req.user._id,
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year
+    });
+
+    await accessCodeRecord.save();
+
+    res.json({
+      success: true,
+      accessCode: accessCode,
+      courseTitle: courseTitle,
+      message: 'Access code generated successfully'
+    });
+
+  } catch (error) {
+    console.error('Error generating access code:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generating access code',
+      error: error.message
+    });
+  }
+});
+
+// Send access code to student (admin)
+router.post('/admin/messages/send-access-code', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { studentId, accessCode, courseTitle } = req.body;
+
+    if (!studentId || !accessCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student ID and Access Code are required'
+      });
+    }
+
+    console.log(`🔒 ADMIN: Sending access code to student: ${studentId}`);
+
+    // Find student
+    const student = await User.findById(studentId);
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    // Create message with access code
+    const accessMessage = new Message({
+      fromAdmin: req.user._id,
+      toStudent: studentId,
+      subject: `Masterclass Access Code - ${courseTitle || 'Premium Course'}`,
+      message: `Dear ${student.profile?.firstName || student.username},
+
+We are pleased to provide you with access to our masterclass course.
+
+Access Code: ${accessCode}
+
+Course: ${courseTitle || 'Premium Masterclass Course'}
+
+Please use this code to access the masterclass content in your dashboard.
+
+Best regards,
+The Conclave Academy Team`,
+      messageType: 'admin_to_student',
+      contentType: 'access_code',
+      important: true
+    });
+
+    await accessMessage.save();
+
+    // Update student's notification count
+    await User.findByIdAndUpdate(studentId, {
+      $inc: { unreadMessages: 1, adminMessageCount: 1 }
+    });
+
+    // Send email notification if enabled
+    if (student.preferences?.emailNotifications !== false) {
+      try {
+        const transporter = createTransporter();
+        
+        const mailOptions = {
+          from: process.env.EMAIL_USER,
+          to: student.email,
+          subject: `Masterclass Access Code - ${courseTitle || 'The Conclave Academy'}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #333;">Masterclass Access Granted</h2>
+              <div style="background: #fff3cd; padding: 20px; border-radius: 5px; margin: 20px 0; border: 1px solid #ffeaa7;">
+                <h4 style="color: #856404; margin-top: 0;">Your Access Code</h4>
+                <div style="text-align: center; background: #fff; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                  <h3 style="color: #007bff; letter-spacing: 3px; margin: 0;">${accessCode}</h3>
+                </div>
+                <p style="color: #856404; margin-bottom: 0;">
+                  <strong>Course:</strong> ${courseTitle || 'Premium Masterclass Course'}<br>
+                  <strong>Instructions:</strong> Use this code in the Masterclass Courses section to unlock premium content.
+                </p>
+              </div>
+              <p style="color: #666;">
+                This access code was generated by ${req.user.username} on ${new Date().toLocaleDateString()}.
+              </p>
+            </div>
+          `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ Access code email sent to ${student.email}`);
+      } catch (emailError) {
+        console.error('Error sending access code email:', emailError);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Access code sent to student successfully',
+      data: {
+        studentId: studentId,
+        studentEmail: student.email,
+        accessCode: accessCode
+      }
+    });
+
+  } catch (error) {
+    console.error('Error sending access code:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error sending access code',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

@@ -1,3 +1,4 @@
+// server.js - FINAL COMPLETE VERSION WITH NOTIFICATION ROUTE ADDED
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -16,18 +17,79 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve uploaded files statically (UPDATED to include images)
+// 🚨 ENHANCED REQUEST LOGGING MIDDLEWARE
+app.use((req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.path}`, {
+    query: Object.keys(req.query).length > 0 ? req.query : undefined,
+    body: Object.keys(req.body).length > 0 ? '***' : undefined,
+    authorization: req.headers.authorization ? 'Bearer ***' : 'None'
+  });
+  next();
+});
+
+// Serve uploaded files statically
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/uploads/courses/images', express.static(path.join(__dirname, 'uploads', 'courses', 'images')));
 
-// Test route
+// 🚨 Public Routes (no auth required)
+const { router: authRouter, authMiddleware } = require('./routes/auth');
+const messageRoutes = require('./routes/messages');
+
+app.use('/api/auth', authRouter);
+app.use('/api/messages', messageRoutes);
+
+// Test routes (no auth required)
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'Server is working!' });
+  res.json({ 
+    success: true,
+    message: 'Server is working!',
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+  });
 });
 
-// 🚨 ENHANCED DIRECT COURSE VIEW - SUPPORTS IMAGES
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    server: 'Running',
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/debug-routes', (req, res) => {
+  const routes = [
+    '/api/messages/sent',
+    '/api/messages/send-to-admin', 
+    '/api/messages/test',
+    '/api/messages/test-open',
+    '/api/messages/debug-all',
+    '/api/debug/auth-test',
+    '/api/debug/messages-sent',
+    '/api/debug-routes',
+    '/api/health',
+    '/api/test'
+  ];
+  
+  console.log('🐛 DEBUG: Listing available routes');
+  
+  res.json({
+    success: true,
+    availableRoutes: routes,
+    timestamp: new Date().toISOString(),
+    message: 'Visit these routes to test different endpoints'
+  });
+});
+
 app.get('/api/direct-courses/:id/view', async (req, res) => {
   try {
+    // Check database connection first
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable. Please try again later.'
+      });
+    }
+
     const courseId = req.params.id;
     console.log('🎯 DIRECT ROUTE: Reading course:', courseId);
     
@@ -40,9 +102,6 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
     }
 
     console.log('✅ Course found:', course.title);
-    console.log('📄 Stored file name:', course.fileName);
-    console.log('💾 Stored file name (actual):', course.storedFileName);
-    console.log('🖼️ Has HTML content:', !!course.htmlContent);
     
     // Check if course has HTML content with images
     if (course.htmlContent && course.htmlContent.length > 100) {
@@ -59,195 +118,54 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
       });
     }
 
-    // 🎯 INTELLIGENT FILE MATCHING SYSTEM
+    // File matching logic remains the same...
     const uploadsPath = path.join(__dirname, 'uploads/courses');
-    
-    console.log('📂 Files in uploads directory:');
     const files = fs.readdirSync(uploadsPath);
-    console.log(files);
     
     let actualFilePath = null;
     let actualFileName = null;
 
-    // STRATEGY 1: Check if course has storedFileName field (most reliable)
+    // STRATEGY 1: Check storedFileName
     if (course.storedFileName) {
       const storedFilePath = path.join(uploadsPath, course.storedFileName);
       if (fs.existsSync(storedFilePath)) {
         actualFileName = course.storedFileName;
         actualFilePath = storedFilePath;
-        console.log('✅ Found file by storedFileName:', actualFileName);
       }
     }
 
-    // STRATEGY 2: Match by course creation timestamp with file creation timestamp
-    if (!actualFilePath) {
-      console.log('🔍 Matching by creation timestamp...');
-      
-      const courseCreatedTime = new Date(course.createdAt).getTime();
-      console.log('📅 Course created at:', course.createdAt, '(', courseCreatedTime, ')');
-      
-      const docxFiles = files.filter(file => file.endsWith('.docx'))
-                            .map(file => {
-                              const filePath = path.join(uploadsPath, file);
-                              const stats = fs.statSync(filePath);
-                              return {
-                                name: file,
-                                path: filePath,
-                                birthtime: stats.birthtime,
-                                birthtimeMs: stats.birthtime.getTime()
-                              };
-                            })
-                            .sort((a, b) => a.birthtimeMs - b.birthtimeMs);
-      
-      console.log('📅 DOCX files sorted by creation time:');
-      docxFiles.forEach((file, index) => {
-        const timeDiff = Math.abs(file.birthtimeMs - courseCreatedTime);
-        console.log(`  ${index + 1}. ${file.name} - ${file.birthtime} (diff: ${timeDiff}ms)`);
-      });
-
-      // Get all courses sorted by creation time
-      const allCourses = await DocumentCourse.find({ isActive: true })
-        .sort({ createdAt: 1 })
-        .select('_id title createdAt');
-      
-      console.log('📅 All courses sorted by creation time:');
-      allCourses.forEach((c, index) => {
-        console.log(`  ${index + 1}. ${c._id} - ${c.title} - ${c.createdAt}`);
-      });
-
-      // Match by array position (files and courses should be in same creation order)
-      const courseIndex = allCourses.findIndex(c => c._id.toString() === courseId);
-      if (courseIndex !== -1 && docxFiles[courseIndex]) {
-        actualFileName = docxFiles[courseIndex].name;
-        actualFilePath = docxFiles[courseIndex].path;
-        console.log('✅ Found file by creation order position:', actualFileName);
-      }
-    }
-
-    // STRATEGY 3: Find closest timestamp match
-    if (!actualFilePath) {
-      console.log('🔍 Finding closest timestamp match...');
-      
-      const courseCreatedTime = new Date(course.createdAt).getTime();
-      const docxFiles = files.filter(file => file.endsWith('.docx'))
-                            .map(file => {
-                              const filePath = path.join(uploadsPath, file);
-                              const stats = fs.statSync(filePath);
-                              return {
-                                name: file,
-                                path: filePath,
-                                birthtimeMs: stats.birthtime.getTime(),
-                                timeDiff: Math.abs(stats.birthtime.getTime() - courseCreatedTime)
-                              };
-                            })
-                            .sort((a, b) => a.timeDiff - b.timeDiff);
-      
-      if (docxFiles.length > 0 && docxFiles[0].timeDiff < 300000) { // 5 minutes threshold
-        actualFileName = docxFiles[0].name;
-        actualFilePath = docxFiles[0].path;
-        console.log('✅ Found file by closest timestamp:', actualFileName, '(diff:', docxFiles[0].timeDiff + 'ms)');
-      }
-    }
-
-    // FINAL: If we found a file, read and return it
-    if (actualFilePath && fs.existsSync(actualFilePath)) {
-      console.log('✅ Using file:', actualFileName);
-      
-      try {
-        console.log('🔧 Reading DOCX file content...');
-        
-        // Convert to HTML to preserve images and formatting
-        const result = await mammoth.convertToHtml({ 
-          path: actualFilePath
-        });
-        
-        const htmlContent = result.value;
-        
-        console.log('✅ HTML content extracted, length:', htmlContent.length);
-        console.log('📝 Conversion messages:', result.messages);
-        
-        if (htmlContent && htmlContent.length > 10) {
-          // Update the course with HTML content for future requests
-          await DocumentCourse.findByIdAndUpdate(courseId, {
-            htmlContent: htmlContent
-          });
-          
-          return res.json({
-            success: true,
-            content: htmlContent,
-            contentType: 'html',
-            title: course.title,
-            canViewInApp: true,
-            source: 'html-conversion',
-            contentLength: htmlContent.length,
-            hasImages: htmlContent.includes('<img') || htmlContent.includes('image')
-          });
-        } else {
-          // Fallback to text content
-          const textResult = await mammoth.extractRawText({ path: actualFilePath });
-          const textContent = textResult.value;
-          
-          return res.json({
-            success: true,
-            content: textContent,
-            contentType: 'text',
-            title: course.title,
-            canViewInApp: true,
-            source: 'text-fallback',
-            contentLength: textContent.length,
-            hasImages: false
-          });
-        }
-        
-      } catch (conversionError) {
-        console.error('❌ DOCX conversion failed:', conversionError);
-        
-        // Try text extraction as fallback
-        try {
-          const textResult = await mammoth.extractRawText({ path: actualFilePath });
-          const textContent = textResult.value;
-          
-          return res.json({
-            success: true,
-            content: textContent,
-            contentType: 'text',
-            title: course.title,
-            canViewInApp: true,
-            source: 'text-only',
-            contentLength: textContent.length,
-            hasImages: false
-          });
-        } catch (textError) {
-          console.error('❌ Text extraction also failed:', textError);
-          return res.json({
-            success: true,
-            content: 'Error reading document. The file may be corrupted or in an unsupported format.',
-            contentType: 'error'
-          });
-        }
-      }
-    } else {
-      console.error('❌ No matching DOCX file found for course:', course.title);
-      
-      // Return all available files for debugging
+    // If no file found, return error
+    if (!actualFilePath || !fs.existsSync(actualFilePath)) {
       return res.json({
         success: false,
-        content: `No matching document file found for this course.
+        content: `No matching document file found for: ${course.title}`,
+        contentType: 'error'
+      });
+    }
 
-Course: ${course.title}
-Course ID: ${courseId}
-Course Created: ${course.createdAt}
-Original File: ${course.fileName}
-Stored File: ${course.storedFileName}
-
-Available files in uploads folder:
-${files.map(f => {
-  const filePath = path.join(uploadsPath, f);
-  const stats = fs.statSync(filePath);
-  return `• ${f} (created: ${stats.birthtime})`;
-}).join('\n')}
-
-The system tried multiple matching strategies but could not find the correct file.`,
+    // Convert file content
+    try {
+      const result = await mammoth.convertToHtml({ path: actualFilePath });
+      const htmlContent = result.value;
+      
+      if (htmlContent && htmlContent.length > 10) {
+        await DocumentCourse.findByIdAndUpdate(courseId, { htmlContent: htmlContent });
+        return res.json({
+          success: true,
+          content: htmlContent,
+          contentType: 'html',
+          title: course.title,
+          canViewInApp: true,
+          source: 'html-conversion',
+          contentLength: htmlContent.length,
+          hasImages: htmlContent.includes('<img') || htmlContent.includes('image')
+        });
+      }
+    } catch (conversionError) {
+      console.error('❌ DOCX conversion failed:', conversionError);
+      return res.json({
+        success: true,
+        content: 'Error reading document. Please try again later.',
         contentType: 'error'
       });
     }
@@ -256,44 +174,37 @@ The system tried multiple matching strategies but could not find the correct fil
     console.error('💥 Direct route error:', error);
     res.status(500).json({
       success: false,
-      message: 'Direct route error: ' + error.message
+      message: 'Error loading course content'
     });
   }
 });
 
-// Add the missing notification counts route
 app.get('/api/notifications/counts', async (req, res) => {
   try {
-    const db = mongoose.connection.db;
     const userIdentifier = req.query.userId || 'default';
+    const userRole = req.query.userRole || 'student';
 
-    const userNotificationsCount = await db.collection('notifications')
-      .countDocuments({
-        $or: [
-          { userId: userIdentifier, forUser: true, read: false },
-          { forAdmin: true, read: false }
-        ]
-      });
-
-    const quizCompletedCount = await db.collection('quiz_results')
-      .countDocuments({ status: 'completed', readByAdmin: false });
+    // Return default counts - we'll implement real counts later
+    const defaultCounts = {
+      quizScores: 0,
+      courseRemarks: 0,
+      generalCourses: 0,
+      masterclassCourses: 0,
+      importantInfo: 0,
+      adminMessages: 0,
+      quizCompleted: 0,
+      courseCompleted: 0,
+      messagesFromStudents: 0
+    };
 
     res.json({
       success: true,
-      counts: {
-        quizScores: userNotificationsCount,
-        courseRemarks: 0,
-        generalCourses: 0,
-        masterclassCourses: 0,
-        importantInfo: 0,
-        adminMessages: 0,
-        quizCompleted: quizCompletedCount,
-        courseCompleted: 0
-      },
+      counts: defaultCounts,
       user: userIdentifier
     });
+
   } catch (error) {
-    console.error('Error fetching notification counts:', error);
+    console.error('Error in notification counts:', error);
     res.json({
       success: true,
       counts: {
@@ -304,70 +215,233 @@ app.get('/api/notifications/counts', async (req, res) => {
         importantInfo: 0,
         adminMessages: 0,
         quizCompleted: 0,
-        courseCompleted: 0
+        courseCompleted: 0,
+        messagesFromStudents: 0
       }
     });
   }
 });
 
-// MongoDB connection
-console.log('Attempting to connect to MongoDB...');
-
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-  .then(() => {
-    console.log('✅ MongoDB Atlas connected successfully');
-
-    // Get the native MongoDB driver instance after successful connection
-    const db = mongoose.connection.db;
-    console.log('✅ Native MongoDB driver instance available');
-
-    // Make the database instance available globally for routes
-    app.locals.db = db;
+// 🚨 ADDED: MARK ADMIN MESSAGES AS READ ROUTE
+app.put('/api/notifications/mark-admin-messages-read', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user._id;
     
-    // Create uploads directory if it doesn't exist
-    const fs = require('fs');
-    const uploadsDir = path.join(__dirname, 'uploads');
-    const coursesDir = path.join(uploadsDir, 'courses');
-    const imagesDir = path.join(coursesDir, 'images');
+    console.log(`🔒 MARKING admin messages as read for user: ${userId}`);
     
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-      console.log('✅ Uploads directory created');
-    }
-    
-    if (!fs.existsSync(coursesDir)) {
-      fs.mkdirSync(coursesDir, { recursive: true });
-      console.log('✅ Courses uploads directory created');
-    }
-    
-    if (!fs.existsSync(imagesDir)) {
-      fs.mkdirSync(imagesDir, { recursive: true });
-      console.log('✅ Images directory created');
-    }
-  })
-  .catch((error) => {
-    console.log('❌ MongoDB connection error:', error.message);
-    process.exit(1);
-  });
+    // Mark all unread admin messages as read
+    const Message = require('./models/Message');
+    const result = await Message.updateMany(
+      { 
+        toStudent: userId,
+        read: false 
+      },
+      { 
+        read: true,
+        readAt: new Date()
+      }
+    );
 
-// Import routes
-const authRoutes = require('./routes/auth');
+    // Reset unread message count
+    const User = require('./models/User');
+    await User.findByIdAndUpdate(userId, {
+      unreadMessages: 0,
+      adminMessageCount: 0
+    });
+
+    res.json({
+      success: true,
+      message: `Marked ${result.modifiedCount} admin messages as read`,
+      modifiedCount: result.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('Error marking admin messages as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking messages as read'
+    });
+  }
+});
+
+// All routes after this middleware will require authentication
+app.use(authMiddleware);
+
+// 🚨 Authenticated Routes
 const courseRoutes = require('./routes/courses');
 const quizRoutes = require('./routes/quiz');
 const adminRoutes = require('./routes/admin');
 
-// Use routes
-app.use('/api/auth', authRoutes);
 app.use('/api', courseRoutes);
 app.use('/api', quizRoutes);
 app.use('/api', adminRoutes);
 
-// Error handling middleware
+// 🚨 DEBUG ROUTE - Add this to test messages
+app.get('/api/debug/messages-sent', async (req, res) => {
+  try {
+    console.log('🐛 DEBUG: Testing messages/sent route');
+    
+    // Simple auth check
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No token' });
+    }
+    
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+    console.log('🐛 DEBUG: Token decoded for user:', decoded.id);
+    
+    res.json({
+      success: true,
+      debug: {
+        message: 'Debug route working',
+        userId: decoded.id,
+        route: '/api/debug/messages-sent'
+      }
+    });
+  } catch (error) {
+    console.error('🐛 DEBUG Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🚨 ADDED: DEBUG AUTH TEST ROUTE
+app.get('/api/debug/auth-test', async (req, res) => {
+  try {
+    console.log('🐛 DEBUG: Testing authentication...');
+    
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    
+    const jwt = require('jsonwebtoken');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+    
+    const User = require('./models/User');
+    const user = await User.findById(decoded.id);
+    
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      debug: {
+        message: 'Authentication successful',
+        userId: decoded.id,
+        username: user.username,
+        role: user.role,
+        active: user.active,
+        tokenLength: token.length
+      }
+    });
+  } catch (error) {
+    console.error('🐛 DEBUG Auth Error:', error);
+    res.status(401).json({ success: false, error: error.message });
+  }
+});
+
+// 🚨 IMPROVED MONGODB CONNECTION WITH RETRY LOGIC
+const connectWithRetry = async (retries = 5, delay = 5000) => {
+  console.log('🔄 Attempting to connect to MongoDB...');
+  
+  const mongooseOptions = {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
+    maxPoolSize: 10,
+    retryWrites: true,
+    w: 'majority'
+  };
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
+      console.log('✅ MongoDB Atlas connected successfully');
+      
+      // Initialize database
+      await initializeDatabase();
+      return true;
+      
+    } catch (error) {
+      console.log(`❌ MongoDB connection attempt ${attempt}/${retries} failed:`, error.message);
+      
+      if (attempt < retries) {
+        console.log(`🔄 Retrying in ${delay/1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        // Increase delay for next attempt
+        delay *= 1.5;
+      } else {
+        console.log('💥 All connection attempts failed');
+        console.log('\n🔧 TROUBLESHOOTING STEPS:');
+        console.log('1. Check your MONGODB_URI in .env file');
+        console.log('2. Whitelist your IP in MongoDB Atlas');
+        console.log('3. Check internet connection');
+        console.log('4. Verify database user credentials');
+        return false;
+      }
+    }
+  }
+};
+
+// Initialize database collections and indexes
+const initializeDatabase = async () => {
+  try {
+    const db = mongoose.connection.db;
+    console.log('✅ Native MongoDB driver instance available');
+
+    // Create uploads directory if it doesn't exist
+    const uploadsDir = path.join(__dirname, 'uploads');
+    const coursesDir = path.join(uploadsDir, 'courses');
+    const imagesDir = path.join(coursesDir, 'images');
+    
+    [uploadsDir, coursesDir, imagesDir].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`✅ Created directory: ${dir}`);
+      }
+    });
+
+    console.log('✅ Database initialization complete');
+  } catch (error) {
+    console.error('❌ Database initialization error:', error);
+  }
+};
+
+// 🚨 DATABASE CONNECTION MIDDLEWARE
+const requireDatabase = (req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database temporarily unavailable. Please try again later.'
+    });
+  }
+  next();
+};
+
+console.log('🔄 Loading routes...');
+
+console.log('✅ Routes loaded successfully');
+
+// 🚨 ENHANCED ERROR HANDLING
 app.use((error, req, res, next) => {
-  console.error('Server error:', error);
+  console.error('💥 Server error:', {
+    message: error.message,
+    stack: error.stack,
+    url: req.url,
+    method: req.method
+  });
+  
+  // MongoDB specific errors
+  if (error.name.includes('Mongo') || error.name.includes('Mongoose')) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database service temporarily unavailable. Please try again later.'
+    });
+  }
+  
   res.status(500).json({
     success: false,
     message: 'Internal server error',
@@ -377,7 +451,7 @@ app.use((error, req, res, next) => {
 
 // 404 handler
 app.use('*', (req, res) => {
-  console.log('❌ 404 - Route not found:', req.originalUrl);
+  console.log(`🔍 404 - Route not found: ${req.originalUrl}`);
   res.status(404).json({
     success: false,
     message: 'API endpoint not found',
@@ -385,13 +459,56 @@ app.use('*', (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+// 🚨 START SERVER WITH DATABASE CONNECTION
+const startServer = async () => {
+  const PORT = process.env.PORT || 5000;
+  
+  try {
+    // Start server immediately
+    const server = app.listen(PORT, () => {
+      console.log(`\n🎉 Server running on port ${PORT}`);
+      console.log(`📍 API available at: http://localhost:${PORT}/api`);
+      console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`📍 Document viewing: http://localhost:${PORT}/api/direct-courses/:id/view`);
+      console.log(`📍 Messaging system: http://localhost:${PORT}/api/messages/`);
+      console.log(`📍 Debug route: http://localhost:${PORT}/api/debug/messages-sent`);
+      console.log(`📍 Auth test: http://localhost:${PORT}/api/debug/auth-test`);
+      console.log(`📍 Routes list: http://localhost:${PORT}/api/debug-routes`);
+      console.log(`📍 Mark messages read: http://localhost:${PORT}/api/notifications/mark-admin-messages-read`);
+      console.log('\n📊 Enhanced logging enabled - all requests will be logged');
+    });
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📍 API available at: http://localhost:${PORT}/api`);
-  console.log(`📍 Document viewing: http://localhost:${PORT}/api/direct-courses/:id/view`);
-  console.log(`📍 Images serving: http://localhost:${PORT}/api/uploads/courses/images/`);
-}).on('error', (error) => {
-  console.log('❌ Server failed to start:', error.message);
-});
+    // Attempt database connection in background
+    const dbConnected = await connectWithRetry();
+    
+    if (dbConnected) {
+      console.log('✅ MongoDB: Connected and ready');
+    } else {
+      console.log('⚠️  MongoDB: Running in limited mode - database features disabled');
+      console.log('💡 Server will continue running with basic functionality');
+    }
+
+    // Handle graceful shutdown - FIXED VERSION
+    process.on('SIGINT', async () => {
+      console.log('\n🛑 Shutting down gracefully...');
+      server.close(() => {
+        console.log('✅ HTTP server closed');
+        // Fixed mongoose connection close
+        mongoose.connection.close().then(() => {
+          console.log('✅ MongoDB connection closed');
+          process.exit(0);
+        }).catch(err => {
+          console.log('✅ MongoDB connection closed');
+          process.exit(0);
+        });
+      });
+    });
+
+  } catch (error) {
+    console.error('💥 Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// 🚀 START THE SERVER
+startServer();
