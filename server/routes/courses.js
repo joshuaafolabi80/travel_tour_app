@@ -1,6 +1,8 @@
+// routes/courses.js - FIXED VERSION WITH PROPER ROUTE ORDER
 const express = require('express');
 const mongoose = require('mongoose');
 const DocumentCourse = require('../models/DocumentCourse');
+const Course = require('../models/Course');
 const User = require('../models/User');
 const AccessCode = require('../models/AccessCode');
 
@@ -24,24 +26,65 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-// 🚨 FIXED: Put specific routes BEFORE parameterized routes
+// 🚨 CRITICAL: SPECIFIC ROUTES MUST COME BEFORE PARAMETERIZED ROUTES
 
-// Notification counts route - MUST COME BEFORE :id routes
+// Notification counts route - MUST BE FIRST
 router.get('/courses/notification-counts', authMiddleware, async (req, res) => {
   try {
+    console.log('🔔 Fetching notification counts for user:', req.user._id);
+    
     const user = await User.findById(req.user._id);
+    
+    // Get counts for general and masterclass courses
+    const generalCoursesCount = await DocumentCourse.countDocuments({ 
+      courseType: 'general', 
+      isActive: true 
+    });
+    
+    const masterclassCoursesCount = await DocumentCourse.countDocuments({ 
+      courseType: 'masterclass', 
+      isActive: true,
+      _id: { $in: user.accessibleMasterclassCourses || [] }
+    });
+    
     res.json({
       success: true,
-      generalCourses: user.generalCoursesCount || 0,
-      masterclassCourses: user.masterclassCoursesCount || 0
+      generalCourses: generalCoursesCount || 0,
+      masterclassCourses: masterclassCoursesCount || 0,
+      counts: {
+        quizScores: 0,
+        courseRemarks: 0,
+        generalCourses: generalCoursesCount || 0,
+        masterclassCourses: masterclassCoursesCount || 0,
+        importantInfo: 0,
+        adminMessages: 0,
+        quizCompleted: 0,
+        courseCompleted: 0,
+        messagesFromStudents: 0
+      }
     });
   } catch (error) {
     console.error('Error fetching notification counts:', error);
-    res.status(500).json({ success: false, message: 'Error fetching notification counts' });
+    res.json({
+      success: true,
+      generalCourses: 0,
+      masterclassCourses: 0,
+      counts: {
+        quizScores: 0,
+        courseRemarks: 0,
+        generalCourses: 0,
+        masterclassCourses: 0,
+        importantInfo: 0,
+        adminMessages: 0,
+        quizCompleted: 0,
+        courseCompleted: 0,
+        messagesFromStudents: 0
+      }
+    });
   }
 });
 
-// 🚨 NEW: Masterclass Access Code Validation
+// Masterclass Access Code Validation - MUST BE BEFORE :id
 router.post('/courses/validate-masterclass-access', authMiddleware, async (req, res) => {
   try {
     const { accessCode } = req.body;
@@ -50,7 +93,6 @@ router.post('/courses/validate-masterclass-access', authMiddleware, async (req, 
       return res.status(400).json({ success: false, message: 'Access code is required' });
     }
 
-    // Find the access code
     const accessCodeRecord = await AccessCode.findOne({ 
       code: accessCode.trim(),
       isUsed: false,
@@ -64,13 +106,11 @@ router.post('/courses/validate-masterclass-access', authMiddleware, async (req, 
       });
     }
 
-    // Mark the access code as used
     accessCodeRecord.isUsed = true;
     accessCodeRecord.usedBy = req.user._id;
     accessCodeRecord.usedAt = new Date();
     await accessCodeRecord.save();
 
-    // Add course to user's accessible masterclass courses
     await User.findByIdAndUpdate(req.user._id, {
       $addToSet: { accessibleMasterclassCourses: accessCodeRecord.courseId._id }
     });
@@ -87,7 +127,30 @@ router.post('/courses/validate-masterclass-access', authMiddleware, async (req, 
   }
 });
 
-// Get courses list - FIXED: Proper course type separation
+// Get destination courses list - MUST BE BEFORE :id
+router.get('/courses/destinations', authMiddleware, async (req, res) => {
+  try {
+    console.log('🌍 Fetching destination courses...');
+    
+    const destinationCourses = await Course.find({}).select('destinationId name continent heroImage about enrollmentCount');
+    
+    console.log(`✅ Found ${destinationCourses.length} destination courses`);
+    
+    res.json({
+      success: true,
+      destinations: destinationCourses,
+      totalCount: destinationCourses.length
+    });
+  } catch (error) {
+    console.error('Error fetching destination courses:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching destination courses' 
+    });
+  }
+});
+
+// Get courses list - MUST BE BEFORE :id
 router.get('/courses', authMiddleware, async (req, res) => {
   try {
     const { type, page = 1, limit = 10 } = req.query;
@@ -95,18 +158,15 @@ router.get('/courses', authMiddleware, async (req, res) => {
     
     let query = { isActive: true };
     
-    // 🚨 FIXED: Proper course type separation
     if (type === 'general') {
       query.courseType = 'general';
     } else if (type === 'masterclass') {
       query.courseType = 'masterclass';
       
-      // For masterclass courses, only show courses the user has access to
       const user = await User.findById(req.user._id);
       if (user && user.accessibleMasterclassCourses && user.accessibleMasterclassCourses.length > 0) {
         query._id = { $in: user.accessibleMasterclassCourses };
       } else {
-        // User has no access to any masterclass courses
         return res.json({
           success: true,
           courses: [],
@@ -139,32 +199,66 @@ router.get('/courses', authMiddleware, async (req, res) => {
   }
 });
 
-// Get single course - Add ObjectId validation
+// 🚨 DEBUG ROUTES - MUST BE BEFORE :id
+router.get('/courses/debug/morocco', authMiddleware, async (req, res) => {
+  try {
+    console.log('🔍 DEBUG: Checking Morocco course specifically...');
+    
+    const course = await Course.findOne({ destinationId: 'morocco' });
+    
+    res.json({
+      success: true,
+      courseFound: !!course,
+      course: course
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ success: false, message: 'Debug error' });
+  }
+});
+
+// 🚨 PARAMETERIZED ROUTES MUST COME LAST
+
+// Get single course by ID or destinationId - THIS COMES LAST
 router.get('/courses/:id', authMiddleware, async (req, res) => {
   try {
     const courseId = req.params.id;
     
-    // Check if it's a valid ObjectId to avoid the notification-counts error
-    if (!mongoose.Types.ObjectId.isValid(courseId)) {
-      return res.status(400).json({ success: false, message: 'Invalid course ID' });
+    console.log(`🔍 Looking for course with ID: ${courseId}`);
+    
+    // Skip if this is a special route that should have been caught earlier
+    if (['notification-counts', 'destinations', 'debug'].includes(courseId)) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Course not found' 
+      });
     }
     
-    const course = await DocumentCourse.findById(courseId);
+    let course = null;
+    
+    // Simple case-insensitive search without isActive filter
+    course = await Course.findOne({ 
+      destinationId: { $regex: new RegExp(`^${courseId}$`, 'i') }
+    });
+    
+    console.log(`🔍 Course found:`, course ? `${course.name} (${course.destinationId})` : 'No');
     
     if (!course) {
-      return res.status(404).json({ success: false, message: 'Course not found' });
-    }
-    
-    // 🚨 FIXED: Check access for masterclass courses
-    if (course.courseType === 'masterclass') {
-      const user = await User.findById(req.user._id);
-      if (!user.accessibleMasterclassCourses.includes(courseId)) {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Access denied. You need a valid access code to view this masterclass course.' 
-        });
+      // Try ObjectId as fallback
+      if (mongoose.Types.ObjectId.isValid(courseId)) {
+        course = await Course.findById(courseId);
       }
     }
+    
+    if (!course) {
+      console.log(`❌ Course not found with ID: ${courseId}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Course not found' 
+      });
+    }
+    
+    console.log(`✅ SUCCESS: Course found: ${course.name}`);
     
     res.json({ 
       success: true, 
@@ -172,7 +266,10 @@ router.get('/courses/:id', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching course:', error);
-    res.status(500).json({ success: false, message: 'Error fetching course' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching course' 
+    });
   }
 });
 

@@ -1,4 +1,4 @@
-// src/components/AdminStudents.jsx
+// src/components/AdminStudents.jsx - UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
@@ -43,7 +43,7 @@ const AdminStudents = () => {
         // Find the student in our list
         const student = students.find(s => 
           s._id === studentData.studentId || 
-          s.name === studentData.studentName ||
+          s.username === studentData.studentName ||
           s.email === studentData.studentEmail
         );
         if (student) {
@@ -59,6 +59,14 @@ const AdminStudents = () => {
   useEffect(() => {
     filterStudents();
   }, [students, searchTerm, filterCriteria]);
+
+  // Get student display name
+  const getStudentDisplayName = (student) => {
+    if (student.profile?.firstName && student.profile?.lastName) {
+      return `${student.profile.firstName} ${student.profile.lastName}`;
+    }
+    return student.username || student.email || 'Unknown User';
+  };
 
   const showCustomAlert = (message, type = 'success') => {
     setAlertMessage(message);
@@ -103,13 +111,17 @@ const AdminStudents = () => {
 
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(student =>
-        student.name?.toLowerCase().includes(term) ||
-        student.email?.toLowerCase().includes(term) ||
-        student.role?.toLowerCase().includes(term) ||
-        student.status?.toLowerCase().includes(term) ||
-        new Date(student.createdAt).toLocaleDateString().toLowerCase().includes(term)
-      );
+      filtered = filtered.filter(student => {
+        const displayName = getStudentDisplayName(student).toLowerCase();
+        return (
+          displayName.includes(term) ||
+          student.username?.toLowerCase().includes(term) ||
+          student.email?.toLowerCase().includes(term) ||
+          student.role?.toLowerCase().includes(term) ||
+          (student.active ? 'active' : 'inactive').includes(term) ||
+          new Date(student.createdAt).toLocaleDateString().toLowerCase().includes(term)
+        );
+      });
     }
 
     if (filterCriteria.role) {
@@ -157,14 +169,15 @@ const AdminStudents = () => {
       }
 
       const dataForExport = dataToExport.map(student => ({
-        'Student Name': student.name,
+        'Student Name': getStudentDisplayName(student),
+        'Username': student.username,
         'Email': student.email,
         'Role': student.role,
         'Status': student.active ? 'Active' : 'Inactive',
         'Registration Date': new Date(student.createdAt).toLocaleDateString(),
-        'Last Login': student.lastLogin ? new Date(student.lastLogin).toLocaleDateString() : 'Never',
-        'Courses Completed': student.coursesCompleted || 0,
-        'Quizzes Taken': student.quizzesTaken || 0,
+        'Last Login': student.stats?.lastLogin ? new Date(student.stats.lastLogin).toLocaleDateString() : 'Never',
+        'Courses Completed': student.stats?.coursesCompleted || 0,
+        'Quizzes Taken': student.stats?.quizzesTaken || 0,
         'User ID': student._id
       }));
 
@@ -203,22 +216,6 @@ const AdminStudents = () => {
   const handleCloseProfile = () => {
     setSelectedStudent(null);
     setShowModal(false);
-  };
-
-  const handleSendMessage = (student) => {
-    // Navigate to Message Students page with this student pre-selected
-    sessionStorage.setItem('adminNavigation', JSON.stringify({
-      target: 'message',
-      studentData: {
-        studentId: student._id,
-        studentName: student.name,
-        studentEmail: student.email
-      }
-    }));
-    
-    // Navigate using hash
-    window.location.hash = '#admin-message-students';
-    showCustomAlert(`Redirecting to message page for ${student.name}...`, 'info');
   };
 
   const getStatusColor = (active) => {
@@ -643,8 +640,10 @@ const AdminStudents = () => {
                               </td>
                               <td>
                                 <div>
-                                  <h6 className="mb-1 fw-bold text-dark">{student.name}</h6>
+                                  <h6 className="mb-1 fw-bold text-dark">{getStudentDisplayName(student)}</h6>
                                   <small className="text-muted">{student.email}</small>
+                                  <br/>
+                                  <small className="text-muted">Username: {student.username}</small>
                                   <br/>
                                   <small className="text-muted">ID: {student._id}</small>
                                 </div>
@@ -674,23 +673,6 @@ const AdminStudents = () => {
                                     title="View Profile"
                                   >
                                     <i className="fas fa-eye"></i>
-                                  </button>
-                                  <button 
-                                    className="btn btn-outline-success btn-sm"
-                                    onClick={() => handleSendMessage(student)}
-                                    title="Send Message"
-                                  >
-                                    <i className="fas fa-envelope"></i>
-                                  </button>
-                                  <button 
-                                    className="btn btn-outline-info btn-sm"
-                                    onClick={() => {
-                                      // View student progress/analytics
-                                      showCustomAlert(`Viewing analytics for ${student.name}`, 'info');
-                                    }}
-                                    title="View Analytics"
-                                  >
-                                    <i className="fas fa-chart-bar"></i>
                                   </button>
                                 </div>
                               </td>
@@ -732,7 +714,7 @@ const AdminStudents = () => {
                 <div className="modal-header text-white" style={{backgroundColor: '#28a745'}}>
                   <h5 className="modal-title">
                     <i className="fas fa-user-circle me-2"></i>
-                    User Profile - {selectedStudent.name}
+                    User Profile - {getStudentDisplayName(selectedStudent)}
                   </h5>
                   <button type="button" className="btn-close btn-close-white" onClick={handleCloseProfile}></button>
                 </div>
@@ -742,7 +724,7 @@ const AdminStudents = () => {
                       <div className="avatar-large bg-primary text-white d-flex align-items-center justify-content-center mx-auto mb-3">
                         <i className={`fas ${getRoleIcon(selectedStudent.role)} fa-3x`}></i>
                       </div>
-                      <h5>{selectedStudent.name}</h5>
+                      <h5>{getStudentDisplayName(selectedStudent)}</h5>
                       <span className={`badge bg-${getRoleBadge(selectedStudent.role)} fs-6`}>
                         {selectedStudent.role}
                       </span>
@@ -750,6 +732,10 @@ const AdminStudents = () => {
                     <div className="col-md-8">
                       <div className="row">
                         <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label fw-bold">Username</label>
+                            <p className="mb-0">{selectedStudent.username}</p>
+                          </div>
                           <div className="mb-3">
                             <label className="form-label fw-bold">Email Address</label>
                             <p className="mb-0">{selectedStudent.email}</p>
@@ -768,6 +754,12 @@ const AdminStudents = () => {
                               </span>
                             </p>
                           </div>
+                          {selectedStudent.profile?.phone && (
+                            <div className="mb-3">
+                              <label className="form-label fw-bold">Phone</label>
+                              <p className="mb-0">{selectedStudent.profile.phone}</p>
+                            </div>
+                          )}
                           <div className="mb-3">
                             <label className="form-label fw-bold">User ID</label>
                             <p className="mb-0 text-muted small">{selectedStudent._id}</p>
@@ -775,29 +767,28 @@ const AdminStudents = () => {
                         </div>
                       </div>
                       
-                      {/* Additional user statistics can be added here */}
-                      <div className="row mt-3">
-                        <div className="col-12">
-                          <h6 className="border-bottom pb-2">Quick Actions</h6>
-                          <div className="d-flex gap-2">
-                            <button 
-                              className="btn btn-outline-success btn-sm"
-                              onClick={() => handleSendMessage(selectedStudent)}
-                            >
-                              <i className="fas fa-envelope me-1"></i>Send Message
-                            </button>
-                            <button 
-                              className="btn btn-outline-primary btn-sm"
-                              onClick={() => {
-                                // View user activity
-                                showCustomAlert(`Viewing activity for ${selectedStudent.name}`, 'info');
-                              }}
-                            >
-                              <i className="fas fa-chart-line me-1"></i>View Activity
-                            </button>
+                      {/* Profile Information */}
+                      {(selectedStudent.profile?.firstName || selectedStudent.profile?.lastName) && (
+                        <div className="row mt-3">
+                          <div className="col-12">
+                            <h6 className="border-bottom pb-2">Profile Information</h6>
+                            <div className="row">
+                              {selectedStudent.profile?.firstName && (
+                                <div className="col-md-6">
+                                  <label className="form-label fw-bold">First Name</label>
+                                  <p className="mb-0">{selectedStudent.profile.firstName}</p>
+                                </div>
+                              )}
+                              {selectedStudent.profile?.lastName && (
+                                <div className="col-md-6">
+                                  <label className="form-label fw-bold">Last Name</label>
+                                  <p className="mb-0">{selectedStudent.profile.lastName}</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>

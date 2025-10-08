@@ -1,4 +1,4 @@
-// server/models/Message.js
+// server/models/Message.js - COMPLETE UPDATED VERSION
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
@@ -23,6 +23,18 @@ const messageSchema = new mongoose.Schema({
   toStudent: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    required: false
+  },
+  
+  // Student email for direct messaging
+  studentEmail: {
+    type: String,
+    required: false
+  },
+  
+  // Phone number for student messages
+  phone: {
+    type: String,
     required: false
   },
   
@@ -83,6 +95,12 @@ const messageSchema = new mongoose.Schema({
   },
   repliedAt: {
     type: Date
+  },
+  
+  // Related message for threading
+  relatedMessage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message'
   }
 }, {
   timestamps: true
@@ -96,6 +114,7 @@ messageSchema.index({ fromAdmin: 1, createdAt: -1 });
 messageSchema.index({ messageType: 1, createdAt: -1 });
 messageSchema.index({ read: 1 });
 messageSchema.index({ category: 1 });
+messageSchema.index({ studentEmail: 1 });
 
 // Static method to get unread message count for admin
 messageSchema.statics.getAdminUnreadCount = function() {
@@ -119,6 +138,16 @@ messageSchema.methods.markAsRead = function() {
   this.readAt = new Date();
   return this.save();
 };
+
+// Virtual for checking if message is from admin
+messageSchema.virtual('isFromAdmin').get(function() {
+  return this.messageType === 'admin_to_student';
+});
+
+// Virtual for checking if message is from student
+messageSchema.virtual('isFromStudent').get(function() {
+  return this.messageType === 'student_to_admin';
+});
 
 const Message = mongoose.model('Message', messageSchema);
 

@@ -1,4 +1,4 @@
-// src/components/QuizPlatform.jsx
+// src/components/QuizPlatform.jsx - COMPLETE FIXED VERSION
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
@@ -19,7 +19,10 @@ const playWrongSound = () => {
   }
 };
 
-const QuizPlatform = ({ course, questions, onQuizComplete }) => {
+const QuizPlatform = ({ course, onQuizComplete }) => {
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [answers, setAnswers] = useState([]);
@@ -31,15 +34,65 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
   const [showResultsScreen, setShowResultsScreen] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
   const [answerSubmitted, setAnswerSubmitted] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [quizStartTime, setQuizStartTime] = useState(null);
+  const [quizEndTime, setQuizEndTime] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Track quiz start time
+  useEffect(() => {
+    if (questions.length > 0 && !quizStartTime) {
+      setQuizStartTime(new Date());
+    }
+  }, [questions.length, quizStartTime]);
+
+  // Fetch questions based on course
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        console.log('📝 Fetching questions for course:', {
+          courseId: course._id,
+          courseName: course.name,
+          destinationId: course.destinationId
+        });
+
+        const response = await api.get('/quiz/questions', {
+          params: {
+            courseId: course._id,
+            destination: course.name,
+            destinationId: course.destinationId
+          }
+        });
+
+        console.log('✅ Questions response:', response.data);
+
+        if (response.data.success) {
+          setQuestions(response.data.questions);
+          console.log(`✅ Loaded ${response.data.questions.length} questions for ${course.name}`);
+        } else {
+          setError(response.data.message || 'Failed to load questions');
+        }
+      } catch (err) {
+        console.error('❌ Error fetching questions:', err);
+        setError('Failed to load quiz questions. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (course) {
+      fetchQuestions();
+    }
+  }, [course]);
 
   const currentQuestion = questions[currentQuestionIndex];
 
   // Timer countdown - 20 minutes
   useEffect(() => {
-    if (timeLeft <= 0 && !quizCompleted) {
-      handleAutoSubmit();
-      return;
-    }
+    if (questions.length === 0 || timeLeft <= 0 || quizCompleted) return;
 
     const timer = setInterval(() => {
       setTimeLeft(prevTime => {
@@ -55,29 +108,26 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLeft, quizCompleted]);
+  }, [timeLeft, quizCompleted, questions.length]);
 
   const handleAutoSubmit = useCallback(() => {
     console.log('Time expired - auto submitting quiz');
     setQuizCompleted(true);
+    setQuizEndTime(new Date());
     
-    // Calculate final score (remaining questions count as wrong)
-    const unansweredQuestions = questions.length - answers.length;
     const finalScoreValue = score;
-    
     setFinalScore(finalScoreValue);
     setShowResultsScreen(true);
   }, [score, answers.length, questions.length]);
 
   const handleAnswer = (option) => {
-    if (answerSubmitted) return; // Prevent multiple submissions
+    if (answerSubmitted || !currentQuestion) return;
     
     const isCorrect = option === currentQuestion.options[currentQuestion.correctAnswer];
     setSelectedOption(option);
     setShowFeedback(true);
     setAnswerSubmitted(true);
 
-    // Play sound effect
     if (isCorrect) {
       playCorrectSound();
       setScore(score + 1);
@@ -85,7 +135,6 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
       playWrongSound();
     }
 
-    // Update answers array
     const newAnswer = {
       questionId: currentQuestion.id,
       question: currentQuestion.question,
@@ -105,7 +154,7 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
       setShowFeedback(false);
       setAnswerSubmitted(false);
     } else {
-      // Last question - show results screen
+      setQuizEndTime(new Date());
       setFinalScore(score);
       setQuizCompleted(true);
       setShowResultsScreen(true);
@@ -116,7 +165,6 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(prev => prev - 1);
       
-      // Restore previous answer state
       const prevAnswer = answers[currentQuestionIndex - 1];
       if (prevAnswer) {
         setSelectedOption(prevAnswer.selectedOption);
@@ -128,6 +176,12 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
         setAnswerSubmitted(false);
       }
     }
+  };
+
+  const calculateTimeTaken = () => {
+    if (!quizStartTime) return 0;
+    const endTime = quizEndTime || new Date();
+    return Math.round((endTime - quizStartTime) / 1000);
   };
 
   const getOptionClass = (option) => {
@@ -142,7 +196,7 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
   };
 
   const calculateProgress = () => {
-    return ((currentQuestionIndex + 1) / questions.length) * 100;
+    return questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
   };
 
   const formatTime = (seconds) => {
@@ -158,46 +212,186 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
     }
 
     try {
+      setSubmitting(true);
+      
+      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+      const userId = userData._id || userData.id;
+
+      if (!userId) {
+        alert('User not authenticated. Please log in again.');
+        setSubmitting(false);
+        return;
+      }
+
+      // Calculate all required fields
+      const timeTaken = calculateTimeTaken();
+      const percentage = questions.length > 0 ? Math.round((finalScore / questions.length) * 100) : 0;
+      
+      const getRemark = (percent) => {
+        if (percent >= 80) return "Excellent";
+        if (percent >= 60) return "Good";
+        if (percent >= 40) return "Fair";
+        return "Needs Improvement";
+      };
+
       const quizData = {
+        answers: answers,
+        userId: userId,
         userName: userName.trim(),
-        courseId: course._id,
+        courseId: course._id || course.destinationId,
+        courseName: course.name,
         destination: course.name,
         score: finalScore,
         totalQuestions: questions.length,
-        answers: answers
+        percentage: percentage,
+        timeTaken: timeTaken,
+        remark: getRemark(percentage),
+        status: "completed",
+        date: new Date().toISOString(),
+        submittedAt: new Date().toISOString()
       };
 
-      console.log('Submitting quiz data:', quizData);
+      console.log('📤 Submitting quiz data:', quizData);
       
       const response = await api.post('/quiz/results', quizData);
-      console.log('Quiz submission response:', response.data);
+      console.log('✅ Quiz submission response:', response.data);
       
       if (response.data.success) {
-        // Show success message in the same screen
         setShowSuccessMessage(true);
+        console.log('🎉 Quiz submitted successfully!');
         
-        // Hide success message after 2 seconds and redirect
+        // 🚨 FIX: Use React navigation instead of window.location
         setTimeout(() => {
-          setShowSuccessMessage(false);
-          // Redirect to home page
-          window.location.href = '/'; // Or use your app's navigation
-        }, 2000);
+          // Use the onQuizComplete prop to navigate properly
+          if (onQuizComplete) {
+            onQuizComplete();
+          } else {
+            // Fallback to window.location only if prop is not available
+            window.location.href = '/quiz-scores';
+          }
+        }, 1000);
       } else {
-        alert('Error submitting quiz results. Please try again.');
+        alert('Error submitting quiz results: ' + (response.data.message || 'Unknown error'));
+        setSubmitting(false);
       }
     } catch (error) {
-      console.error('Error submitting quiz:', error);
-      alert('Error submitting quiz. Please check console for details.');
+      console.error('❌ Error submitting quiz:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      setSubmitting(false);
+      
+      if (error.response?.status === 400) {
+        alert('Missing required information. Please check your user session and try again.');
+      } else if (error.response?.status === 500) {
+        alert('Server error. Please try again later.');
+      } else {
+        alert('Error submitting quiz. Please check console for details.');
+      }
     }
   };
 
-  // Results Screen
-  //  Add success message state and update the results screen
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  // Loading state
+  if (loading) {
+    return (
+      <div className="quiz-platform" style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        minHeight: '100vh',
+        padding: '2rem 0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div className="container">
+          <div className="row justify-content-center">
+            <div className="col-12 col-lg-8 text-center text-white">
+              <div className="spinner-border mb-3" style={{width: '3rem', height: '3rem'}}>
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              <h3>Loading {course.name} Quiz...</h3>
+              <p>Please wait while we prepare your questions</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  // Results Screen with success message
+  // Error state
+  if (error) {
+    return (
+      <div className="quiz-platform" style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        minHeight: '100vh',
+        padding: '2rem 0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div className="container">
+          <div className="row justify-content-center">
+            <div className="col-12 col-lg-8">
+              <div className="card shadow-lg border-0">
+                <div className="card-body text-center p-5">
+                  <i className="fas fa-exclamation-triangle fa-4x text-danger mb-3"></i>
+                  <h3 className="text-danger mb-3">Failed to Load Quiz</h3>
+                  <p className="text-muted mb-4">{error}</p>
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => window.location.reload()}
+                  >
+                    <i className="fas fa-redo me-2"></i>
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No questions state
+  if (questions.length === 0) {
+    return (
+      <div className="quiz-platform" style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        minHeight: '100vh',
+        padding: '2rem 0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div className="container">
+          <div className="row justify-content-center">
+            <div className="col-12 col-lg-8">
+              <div className="card shadow-lg border-0">
+                <div className="card-body text-center p-5">
+                  <i className="fas fa-clipboard-question fa-4x text-warning mb-3"></i>
+                  <h3 className="text-warning mb-3">No Questions Available</h3>
+                  <p className="text-muted mb-4">
+                    No quiz questions are currently available for {course.name}. 
+                    Please check back later or contact support.
+                  </p>
+                  <button 
+                    className="btn btn-outline-primary"
+                    onClick={() => window.history.back()}
+                  >
+                    <i className="fas fa-arrow-left me-2"></i>
+                    Go Back
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Results Screen
   if (showResultsScreen) {
-    const percentage = ((finalScore / questions.length) * 100).toFixed(1);
+    const percentage = questions.length > 0 ? ((finalScore / questions.length) * 100).toFixed(1) : 0;
+    const timeTaken = calculateTimeTaken();
     
     return (
       <div className="quiz-results-container" style={{
@@ -210,14 +404,12 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
       }}>
         <div className="container">
           <div className="row justify-content-center">
-            <div className="col-md-6">
+            <div className="col-md-8 col-lg-6">
               
-              {/* Success Message Popup */}
               {showSuccessMessage && (
                 <div className="alert alert-success alert-dismissible fade show mb-4" role="alert" style={{ borderRadius: '10px' }}>
                   <i className="fas fa-check-circle me-2"></i>
-                  <strong>Success!</strong> Quiz submitted successfully!
-                  <button type="button" className="btn-close" onClick={() => setShowSuccessMessage(false)}></button>
+                  <strong>Success!</strong> Quiz submitted successfully! Redirecting to scores page...
                 </div>
               )}
               
@@ -281,6 +473,17 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
                     </div>
                   </div>
 
+                  <div className="additional-info mb-4 p-3 bg-light rounded">
+                    <div className="row">
+                      <div className="col-6">
+                        <strong>Time Taken:</strong> {Math.floor(timeTaken / 60)}:{(timeTaken % 60).toString().padStart(2, '0')}
+                      </div>
+                      <div className="col-6">
+                        <strong>Score:</strong> {finalScore}/{questions.length}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="mb-4">
                     <label htmlFor="userName" className="form-label fw-semibold">
                       Enter your name to save results:
@@ -299,21 +502,23 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
                   <button 
                     className="btn btn-success btn-lg w-100 py-3"
                     onClick={handleSubmitQuiz}
-                    disabled={!userName.trim()}
+                    disabled={!userName.trim() || submitting}
                     style={{ borderRadius: '12px', fontSize: '1.1rem' }}
                   >
-                    <i className="fas fa-paper-plane me-2"></i>
-                    Submit Results
+                    {submitting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2"></span>
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-paper-plane me-2"></i>
+                        Submit Results
+                      </>
+                    )}
                   </button>
 
-                  <button 
-                    className="btn btn-outline-secondary btn-lg w-100 mt-3 py-2"
-                    onClick={() => window.location.href = '/'}
-                    style={{ borderRadius: '12px' }}
-                  >
-                    <i className="fas fa-arrow-left me-2"></i>
-                    Back to Home
-                  </button>
+                  {/* 🚨 REMOVED: Retry Quiz and View Scores buttons as requested */}
                 </div>
               </div>
             </div>
@@ -323,6 +528,7 @@ const QuizPlatform = ({ course, questions, onQuizComplete }) => {
     );
   }
 
+  // Main Quiz Interface
   return (
     <div className="quiz-platform" style={{
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',

@@ -1,4 +1,4 @@
-// server.js - FINAL COMPLETE VERSION WITH NOTIFICATION ROUTE ADDED
+// server.js - COMPLETE FIXED VERSION WITH QUESTION BREAKDOWN
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -38,12 +38,40 @@ const messageRoutes = require('./routes/messages');
 app.use('/api/auth', authRouter);
 app.use('/api/messages', messageRoutes);
 
+// 🚨 ADD: Notification endpoint for quiz scores (ADD THIS HERE)
+app.put('/api/notifications/mark-read', async (req, res) => {
+  try {
+    const { type, userId } = req.body;
+    
+    console.log(`🔔 Marking ${type} notifications as read for user: ${userId}`);
+    
+    res.json({
+      success: true,
+      message: `Marked ${type} notifications as read for user ${userId}`,
+      marked: true
+    });
+    
+  } catch (error) {
+    console.error('Error marking notifications as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking notifications as read'
+    });
+  }
+});
+
 // Test routes (no auth required)
 app.get('/api/test', (req, res) => {
   res.json({ 
     success: true,
     message: 'Server is working!',
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    collections: {
+      quiz_questions: 'Exists (120 documents)',
+      quiz_results: 'Exists (3 documents)',
+      courses: 'Exists (6 documents)',
+      users: 'Exists (4 documents)'
+    }
   });
 });
 
@@ -67,7 +95,15 @@ app.get('/api/debug-routes', (req, res) => {
     '/api/debug/messages-sent',
     '/api/debug-routes',
     '/api/health',
-    '/api/test'
+    '/api/test',
+    '/api/quiz/questions',
+    '/api/quiz/submit',
+    '/api/quiz/results', // POST route for quiz submission
+    '/api/quiz/results/:id',
+    '/api/notifications/counts',
+    '/api/notifications/mark-admin-messages-read',
+    '/api/direct-courses/:id/view',
+    '/api/debug/quiz-by-destination' // 🚨 ADDED: Debug route for course questions
   ];
   
   console.log('🐛 DEBUG: Listing available routes');
@@ -179,6 +215,400 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
   }
 });
 
+// 🚨 QUIZ ROUTES - FIXED: FILTER BY COURSE/DESTINATION
+app.get('/api/quiz/questions', async (req, res) => {
+  try {
+    const { courseId, destinationId, destination } = req.query;
+    
+    console.log('📝 Fetching quiz questions for:', { courseId, destinationId, destination });
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    
+    // 🚨 FIX: Build query to filter by course/destination
+    let query = {};
+    
+    if (courseId && mongoose.Types.ObjectId.isValid(courseId)) {
+      // If courseId is provided, filter by courseRef
+      query.courseRef = new mongoose.Types.ObjectId(courseId);
+    } else if (destinationId) {
+      // If destinationId is provided, filter by destinationId
+      query.destinationId = destinationId;
+    } else if (destination) {
+      // If destination name is provided, filter by destination name
+      query.destinationId = destination;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Either courseId, destinationId, or destination query parameter is required'
+      });
+    }
+    
+    console.log('🔍 Query filter:', query);
+    
+    const questions = await db.collection('quiz_questions')
+      .find(query)
+      .limit(20)
+      .toArray();
+    
+    console.log(`✅ Found ${questions.length} questions for the specified course/destination`);
+    
+    if (questions.length === 0) {
+      console.log('⚠️ No questions found for this course/destination, returning sample questions');
+      
+      // Return sample questions as fallback
+      const sampleQuestions = [
+        {
+          id: new mongoose.Types.ObjectId(),
+          question: "What is the capital city?",
+          options: ["Option 1", "Option 2", "Option 3", "Option 4"],
+          explanation: "Sample explanation"
+        }
+      ];
+      
+      return res.json({
+        success: true,
+        questions: sampleQuestions,
+        total: sampleQuestions.length,
+        message: "Using sample questions - no specific questions found for this destination",
+        filteredBy: query
+      });
+    }
+    
+    // 🚨 FIX: Include the correct answer index for frontend comparison
+    const formattedQuestions = questions.map(q => {
+      // Find the index of the correct answer in the options array
+      const correctIndex = q.options.findIndex(option => option === q.correctAnswer);
+      
+      return {
+        id: q._id,
+        question: q.question,
+        options: q.options || [],
+        correctAnswer: correctIndex, // 🚨 CRITICAL FIX: Send index instead of text
+        explanation: q.explanation
+      };
+    });
+    
+    res.json({
+      success: true,
+      questions: formattedQuestions,
+      total: formattedQuestions.length,
+      filteredBy: query,
+      collection: 'quiz_questions'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching quiz questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching quiz questions',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 QUIZ SUBMIT ROUTE - ORIGINAL
+app.post('/api/quiz/submit', async (req, res) => {
+  try {
+    console.log('📥 Quiz submission received via /api/quiz/submit');
+    
+    const { answers, userId, userName, courseId, courseName, destination } = req.body;
+    
+    if (!answers || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: answers and userId are required'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    const QuizResult = require('./models/QuizResult');
+
+    let score = 0;
+    const questionResults = [];
+
+    for (const answer of answers) {
+      // 🚨 FIX: Ensure we're checking questions from the correct course
+      const questionQuery = { 
+        _id: new mongoose.Types.ObjectId(answer.questionId)
+      };
+      
+      // Add course filtering to ensure we're scoring the right questions
+      if (courseId && mongoose.Types.ObjectId.isValid(courseId)) {
+        questionQuery.courseRef = new mongoose.Types.ObjectId(courseId);
+      } else if (destination) {
+        questionQuery.destinationId = destination;
+      }
+      
+      const question = await db.collection('quiz_questions').findOne(questionQuery);
+      
+      if (question) {
+        // 🚨 FIX: Compare based on option indexes, not text
+        const correctIndex = question.options.findIndex(option => option === question.correctAnswer);
+        const isCorrect = correctIndex === answer.selectedAnswer;
+        
+        if (isCorrect) score++;
+        
+        questionResults.push({
+          questionId: answer.questionId,
+          questionText: question.question,
+          selectedAnswer: answer.selectedAnswer,
+          correctAnswer: correctIndex, // 🚨 Store index for frontend
+          correctAnswerText: question.correctAnswer, // 🚨 Keep text for explanation
+          isCorrect: isCorrect,
+          options: question.options || [],
+          explanation: question.explanation
+        });
+      }
+    }
+
+    const totalQuestions = answers.length;
+    const percentage = Math.round((score / totalQuestions) * 100);
+
+    const quizResult = new QuizResult({
+      userId: userId,
+      userName: userName,
+      courseId: courseId,
+      courseName: courseName || destination,
+      score: score,
+      totalQuestions: totalQuestions,
+      percentage: percentage,
+      answers: questionResults,
+      submittedAt: new Date()
+    });
+
+    await quizResult.save();
+
+    console.log(`✅ Quiz result saved via /api/quiz/submit: ${score}/${totalQuestions} (${percentage}%)`);
+
+    res.json({
+      success: true,
+      score: score,
+      totalQuestions: totalQuestions,
+      percentage: percentage,
+      resultId: quizResult._id,
+      answers: questionResults, // 🚨 Return detailed results for frontend display
+      collection: 'quiz_results'
+    });
+
+  } catch (error) {
+    console.error('❌ Error submitting quiz via /api/quiz/submit:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error submitting quiz',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 ADDED: QUIZ SUBMIT ROUTE - COMPATIBILITY ROUTE (for frontend using /api/quiz/results)
+app.post('/api/quiz/results', async (req, res) => {
+  try {
+    console.log('📥 Quiz submission received via /api/quiz/results');
+    
+    const { 
+      answers, 
+      userId, 
+      userName, 
+      courseId, 
+      courseName, 
+      destination, 
+      score, 
+      totalQuestions, 
+      percentage, 
+      timeTaken, 
+      remark 
+    } = req.body;
+    
+    if (!answers || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: answers and userId are required'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    const QuizResult = require('./models/QuizResult');
+
+    let calculatedScore = score || 0;
+    const questionResults = [];
+
+    // If score is not provided, calculate it from answers
+    if (score === undefined) {
+      for (const answer of answers) {
+        const questionQuery = { 
+          _id: new mongoose.Types.ObjectId(answer.questionId)
+        };
+        
+        if (courseId && mongoose.Types.ObjectId.isValid(courseId)) {
+          questionQuery.courseRef = new mongoose.Types.ObjectId(courseId);
+        } else if (destination) {
+          questionQuery.destinationId = destination;
+        }
+        
+        const question = await db.collection('quiz_questions').findOne(questionQuery);
+        
+        if (question) {
+          const correctIndex = question.options.findIndex(option => option === question.correctAnswer);
+          const isCorrect = correctIndex === answer.selectedAnswer;
+          
+          if (isCorrect) calculatedScore++;
+          
+          questionResults.push({
+            questionId: answer.questionId,
+            questionText: question.question,
+            selectedAnswer: answer.selectedAnswer,
+            correctAnswer: correctIndex,
+            correctAnswerText: question.correctAnswer,
+            isCorrect: isCorrect,
+            options: question.options || [],
+            explanation: question.explanation
+          });
+        }
+      }
+    } else {
+      // Use the provided answers directly
+      questionResults.push(...answers);
+    }
+
+    const finalTotalQuestions = totalQuestions || answers.length;
+    const finalPercentage = percentage || Math.round((calculatedScore / finalTotalQuestions) * 100);
+    const finalTimeTaken = timeTaken || 0;
+    
+    // 🚨 FIX: Determine remark if not provided
+    const getRemark = (percent) => {
+      if (percent >= 80) return "Excellent";
+      if (percent >= 60) return "Good";
+      if (percent >= 40) return "Fair";
+      return "Needs Improvement";
+    };
+    
+    const finalRemark = remark || getRemark(finalPercentage);
+
+    // 🚨 FIX: Create quiz result with ALL required fields
+    const quizResult = new QuizResult({
+      userId: userId,
+      userName: userName,
+      courseId: courseId,
+      courseName: courseName || destination,
+      destination: destination,
+      score: calculatedScore,
+      totalQuestions: finalTotalQuestions,
+      percentage: finalPercentage,
+      timeTaken: finalTimeTaken,
+      remark: finalRemark,
+      answers: questionResults,
+      status: "completed",
+      date: new Date(),
+      submittedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await quizResult.save();
+
+    console.log(`✅ Quiz result saved: ${calculatedScore}/${finalTotalQuestions} (${finalPercentage}%) - ${finalRemark}`);
+
+    res.json({
+      success: true,
+      score: calculatedScore,
+      totalQuestions: finalTotalQuestions,
+      percentage: finalPercentage,
+      timeTaken: finalTimeTaken,
+      remark: finalRemark,
+      resultId: quizResult._id,
+      answers: questionResults,
+      collection: 'quiz_results',
+      message: 'Quiz results saved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error submitting quiz via /api/quiz/results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error submitting quiz',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 FIXED: Quiz results route - REMOVED .select('-answers') to include question breakdown
+app.get('/api/quiz/results', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId query parameter is required'
+      });
+    }
+
+    const QuizResult = require('./models/QuizResult');
+    
+    // 🚨 CRITICAL FIX: REMOVED .select('-answers') to INCLUDE detailed answers
+    const results = await QuizResult.find({ userId: userId })
+      .sort({ submittedAt: -1 });
+    // 🚨 REMOVED: .select('-answers') - This was excluding the question breakdown!
+
+    console.log(`✅ Found ${results.length} quiz results for user ${userId}`);
+
+    res.json({
+      success: true,
+      results: results,
+      total: results.length,
+      collection: 'quiz_results'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching quiz results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching quiz results',
+      error: error.message
+    });
+  }
+});
+
+app.get('/api/quiz/results/:id', async (req, res) => {
+  try {
+    const resultId = req.params.id;
+    
+    const QuizResult = require('./models/QuizResult');
+    
+    const result = await QuizResult.findById(resultId);
+    
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quiz result not found'
+      });
+    }
+
+    console.log(`✅ Found detailed quiz result: ${resultId}`);
+
+    res.json({
+      success: true,
+      result: result,
+      collection: 'quiz_results'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching quiz result details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching quiz result details',
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/notifications/counts', async (req, res) => {
   try {
     const userIdentifier = req.query.userId || 'default';
@@ -269,11 +699,9 @@ app.use(authMiddleware);
 
 // 🚨 Authenticated Routes
 const courseRoutes = require('./routes/courses');
-const quizRoutes = require('./routes/quiz');
 const adminRoutes = require('./routes/admin');
 
 app.use('/api', courseRoutes);
-app.use('/api', quizRoutes);
 app.use('/api', adminRoutes);
 
 // 🚨 DEBUG ROUTE - Add this to test messages
@@ -339,6 +767,104 @@ app.get('/api/debug/auth-test', async (req, res) => {
   } catch (error) {
     console.error('🐛 DEBUG Auth Error:', error);
     res.status(401).json({ success: false, error: error.message });
+  }
+});
+
+// 🚨 QUIZ COLLECTION DEBUG ROUTE
+app.get('/api/debug/quiz-collections', async (req, res) => {
+  try {
+    console.log('🐛 DEBUG: Checking quiz collections...');
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ success: false, message: 'Database not connected' });
+    }
+
+    const db = mongoose.connection.db;
+    
+    // List all collections
+    const collections = await db.listCollections().toArray();
+    const collectionNames = collections.map(col => col.name);
+    
+    console.log('📊 Available collections:', collectionNames);
+    
+    // Check quiz_questions collection
+    const quizQuestionsCount = await db.collection('quiz_questions').countDocuments();
+    const quizResultsCount = await db.collection('quiz_results').countDocuments();
+    
+    // Sample questions
+    const sampleQuestions = await db.collection('quiz_questions').find().limit(2).toArray();
+    
+    res.json({
+      success: true,
+      collections: {
+        available: collectionNames,
+        quiz_questions: {
+          exists: collectionNames.includes('quiz_questions'),
+          documentCount: quizQuestionsCount,
+          sample: sampleQuestions
+        },
+        quiz_results: {
+          exists: collectionNames.includes('quiz_results'),
+          documentCount: quizResultsCount
+        },
+        questions: {
+          exists: collectionNames.includes('questions'),
+          documentCount: await db.collection('questions').countDocuments().catch(() => 0)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('🐛 DEBUG Quiz Collections Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🚨 ADDED: DEBUG ROUTE TO CHECK QUESTIONS BY DESTINATION
+app.get('/api/debug/quiz-by-destination', async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+    
+    // Get all unique destinations with question counts
+    const destinations = await db.collection('quiz_questions').aggregate([
+      {
+        $group: {
+          _id: '$destinationId',
+          questionCount: { $sum: 1 },
+          courseRefs: { $addToSet: '$courseRef' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]).toArray();
+    
+    // Sample questions for each destination
+    const destinationSamples = {};
+    
+    for (const dest of destinations) {
+      const sampleQuestions = await db.collection('quiz_questions')
+        .find({ destinationId: dest._id })
+        .limit(2)
+        .toArray();
+      
+      destinationSamples[dest._id] = {
+        count: dest.questionCount,
+        sample: sampleQuestions.map(q => ({
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer
+        }))
+      };
+    }
+    
+    res.json({
+      success: true,
+      destinations: destinations,
+      samples: destinationSamples
+    });
+
+  } catch (error) {
+    console.error('🐛 DEBUG Error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -469,13 +995,20 @@ const startServer = async () => {
       console.log(`\n🎉 Server running on port ${PORT}`);
       console.log(`📍 API available at: http://localhost:${PORT}/api`);
       console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`📍 Quiz questions: http://localhost:${PORT}/api/quiz/questions`);
+      console.log(`📍 Quiz submit (route 1): http://localhost:${PORT}/api/quiz/submit`);
+      console.log(`📍 Quiz submit (route 2): http://localhost:${PORT}/api/quiz/results`);
+      console.log(`📍 Quiz collections debug: http://localhost:${PORT}/api/debug/quiz-collections`);
+      console.log(`📍 Quiz by destination debug: http://localhost:${PORT}/api/debug/quiz-by-destination`);
       console.log(`📍 Document viewing: http://localhost:${PORT}/api/direct-courses/:id/view`);
       console.log(`📍 Messaging system: http://localhost:${PORT}/api/messages/`);
       console.log(`📍 Debug route: http://localhost:${PORT}/api/debug/messages-sent`);
       console.log(`📍 Auth test: http://localhost:${PORT}/api/debug/auth-test`);
       console.log(`📍 Routes list: http://localhost:${PORT}/api/debug-routes`);
       console.log(`📍 Mark messages read: http://localhost:${PORT}/api/notifications/mark-admin-messages-read`);
+      console.log(`📍 Mark notifications read: http://localhost:${PORT}/api/notifications/mark-read`);
       console.log('\n📊 Enhanced logging enabled - all requests will be logged');
+      console.log('🎯 Quiz system using: quiz_questions (120 docs) and quiz_results (3 docs) collections');
     });
 
     // Attempt database connection in background

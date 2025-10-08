@@ -1,4 +1,4 @@
-// src/App.jsx - COMPLETE UPDATED VERSION
+// src/App.jsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import { jwtDecode } from 'jwt-decode';
@@ -10,24 +10,14 @@ import FullCourseContent from './destinations/FullCourseContent';
 import QuizPlatform from './components/QuizPlatform';
 import QuizScores from './components/QuizScores';
 import AdminQuizCompleted from './components/AdminQuizCompleted';
-// import CourseRemarks from './components/CourseRemarks';
 import GeneralCourses from './components/GeneralCourses';
 import MasterclassCourses from './components/MasterclassCourses';
-// import ImportantInformation from './components/ImportantInformation';
-// import AdminMessages from './components/AdminMessages';
-// import Community from './components/Community';
-// import ContactUs from './components/ContactUs';
-// import RateShare from './components/RateShare';
-// import AdminDashboard from './components/AdminDashboard';
-import AdminStudents from './components/AdminStudents';
-import AdminMessageStudents from './components/AdminMessageStudents';
-// import AdminCourseCompleted from './components/AdminCourseCompleted';
-import AdminManageCourses from './components/AdminManageCourses';
-// import AdminSendInformation from './components/AdminSendInformation';
-// import AdminCommunity from './components/AdminCommunity';
 import ContactUs from './components/ContactUs';
 import MessageFromStudents from './components/MessageFromStudents';
 import MessageFromAdmin from './components/MessageFromAdmin';
+import AdminStudents from './components/AdminStudents';
+import AdminMessageStudents from './components/AdminMessageStudents';
+import AdminManageCourses from './components/AdminManageCourses';
 import './App.css';
 
 // Reusable Slider Component for both Splash Screen and Home Page
@@ -122,7 +112,6 @@ const App = () => {
   const [authToken, setAuthToken] = useState(null);
   const [alert, setAlert] = useState({ type: '', message: '' });
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [quizQuestions, setQuizQuestions] = useState([]);
   
   const [notificationCounts, setNotificationCounts] = useState({
     quizScores: 0,
@@ -149,17 +138,13 @@ const App = () => {
     }
   };
 
-  // Update fetchNotificationCounts to respect cleared notifications
+  // FIXED: Update fetchNotificationCounts to use correct endpoint
   const fetchNotificationCounts = async () => {
     if (!isLoggedIn || !userData) return;
     
     try {
-      const response = await api.get('/notifications/counts', {
-        params: {
-          userId: userData.name || userData.userName || userData.email,
-          userRole: userRole
-        }
-      });
+      // Use the correct endpoint that exists in courses.js
+      const response = await api.get('/courses/notification-counts');
       
       if (response.data.success) {
         const clearedNotifications = JSON.parse(localStorage.getItem('clearedNotifications') || '{}');
@@ -171,11 +156,9 @@ const App = () => {
         // Add course notification counts for students
         if (userRole === 'student') {
           try {
-            const courseResponse = await api.get('/courses/notification-counts');
-            if (courseResponse.data.success) {
-              updatedCounts.generalCourses = courseResponse.data.generalCourses || 0;
-              updatedCounts.masterclassCourses = courseResponse.data.masterclassCourses || 0;
-            }
+            // Use the data from the main notification counts response
+            updatedCounts.generalCourses = response.data.generalCourses || 0;
+            updatedCounts.masterclassCourses = response.data.masterclassCourses || 0;
             
             // Get admin messages count for students
             const messagesResponse = await api.get('/notifications/admin-messages/' + userData.id);
@@ -214,6 +197,18 @@ const App = () => {
       }
     } catch (error) {
       console.error('Error fetching notification counts:', error);
+      // Set default counts on error to prevent breaking the app
+      setNotificationCounts({
+        quizScores: 0,
+        courseRemarks: 0,
+        generalCourses: 0,
+        masterclassCourses: 0,
+        importantInfo: 0,
+        adminMessages: 0,
+        quizCompleted: 0,
+        courseCompleted: 0,
+        messagesFromStudents: 0
+      });
     }
   };
 
@@ -322,7 +317,7 @@ const App = () => {
           fetchNotificationCounts();
           
           if (user.role === 'admin') {
-            setCurrentPage('admin-dashboard');
+            setCurrentPage('admin-students');
           } else {
             setCurrentPage('home');
           }
@@ -357,7 +352,7 @@ const App = () => {
           fetchNotificationCounts();
           
           if (user.role === 'admin') {
-            setCurrentPage('admin-dashboard');
+            setCurrentPage('admin-students');
           } else {
             setCurrentPage('home');
           }
@@ -387,6 +382,7 @@ const App = () => {
   const handleSelectDestination = async (destinationId) => {
     setCurrentPage('loading');
     try {
+      // Use the main courses endpoint that now accepts destination names
       const response = await api.get(`/courses/${destinationId}`);
       if (response.data.success) {
         setSelectedCourse(response.data.course);
@@ -396,6 +392,7 @@ const App = () => {
         setCurrentPage('destinations');
       }
     } catch (error) {
+      console.error('Error fetching course:', error);
       setAlert({ type: 'error', message: 'Failed to fetch course data.' });
       setCurrentPage('destinations');
     }
@@ -405,19 +402,14 @@ const App = () => {
     setCurrentPage('full-course-content');
   };
 
-  const handleTakeQuiz = async () => {
-    try {
-      const response = await api.get(`/quiz/questions?courseId=${selectedCourse._id}`);
-      if (response.data.success) {
-        setQuizQuestions(response.data.questions);
-        setCurrentPage('quiz-platform');
-      } else {
-        setAlert({ type: 'error', message: 'Failed to load quiz questions.' });
-      }
-    } catch (error) {
-      console.error('Error fetching quiz questions:', error);
-      setAlert({ type: 'error', message: 'Failed to load quiz. Please try again.' });
-    }
+  // 🚨 FIXED: Handle quiz completion properly
+  const handleQuizComplete = () => {
+    // Navigate to quiz scores page after quiz completion
+    setCurrentPage('quiz-scores');
+  };
+
+  const handleTakeQuiz = () => {
+    setCurrentPage('quiz-platform');
   };
 
   const toggleMenu = () => {
@@ -716,31 +708,30 @@ const App = () => {
             {currentPage === 'full-course-content' && selectedCourse && (
               <FullCourseContent course={selectedCourse} onTakeQuiz={handleTakeQuiz} />
             )}
-            {currentPage === 'quiz-platform' && selectedCourse && quizQuestions.length > 0 && (
-              <QuizPlatform course={selectedCourse} questions={quizQuestions} />
+            
+            {/* 🚨 FIXED: QuizPlatform with correct props */}
+            {currentPage === 'quiz-platform' && selectedCourse && (
+              <QuizPlatform 
+                course={selectedCourse} 
+                onQuizComplete={handleQuizComplete}
+              />
             )}
             
-            {/* User Pages */}
+            {/* 🚨 FIXED: QuizScores route */}
             {currentPage === 'quiz-scores' && <QuizScores />}
-            {/* {currentPage === 'course-remarks' && <CourseRemarks />} */}
+            
+            {/* User Pages */}
             {currentPage === 'general-courses' && <GeneralCourses />}
             {currentPage === 'masterclass-courses' && <MasterclassCourses navigateTo={navigateTo} />}
             {currentPage === 'contact-us' && <ContactUs />}
             {currentPage === 'admin-messages' && <MessageFromAdmin />}
-            {/* {currentPage === 'important-information' && <ImportantInformation />} */}
-            {/* {currentPage === 'community' && <Community />} */}
-            {/* {currentPage === 'rate-share' && <RateShare />} */}
             
             {/* Admin Pages */}
-            {/* {currentPage === 'admin-dashboard' && <AdminDashboard />} */}
             {currentPage === 'admin-students' && <AdminStudents />}
             {currentPage === 'admin-message-students' && <AdminMessageStudents />}
             {currentPage === 'admin-quiz-completed' && <AdminQuizCompleted />}
             {currentPage === 'admin-messages-from-students' && <MessageFromStudents />}
-            {/* {currentPage === 'admin-course-completed' && <AdminCourseCompleted />} */}
             {currentPage === 'admin-manage-courses' && <AdminManageCourses />}
-            {/* {currentPage === 'admin-send-information' && <AdminSendInformation />} */}
-            {/* {currentPage === 'admin-community' && <AdminCommunity />} */}
             
             {currentPage === 'loading' && (
               <div className="d-flex justify-content-center align-items-center" style={{height: '50vh'}}>

@@ -1,4 +1,4 @@
-// src/components/AdminMessageStudents.jsx
+// src/components/AdminMessageStudents.jsx - COMPLETE UPDATED VERSION
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
@@ -39,20 +39,34 @@ const AdminMessageStudents = () => {
   }, [currentPage, itemsPerPage]);
 
   useEffect(() => {
-    // Check if we have navigation data from other pages
-    const navigationData = sessionStorage.getItem('adminNavigation');
-    if (navigationData) {
-      const { target, studentData } = JSON.parse(navigationData);
-      if (target === 'message' && studentData) {
+    // Check if we have stored student data from AdminStudents page
+    const storedStudentData = sessionStorage.getItem('adminMessageStudent');
+    console.log('🔍 Checking for stored student data:', storedStudentData);
+    
+    if (storedStudentData) {
+      try {
+        const studentData = JSON.parse(storedStudentData);
+        console.log('🎯 Found stored student data:', studentData);
+        
+        // Find the student in our current list
         const student = students.find(s => 
           s._id === studentData.studentId || 
-          s.name === studentData.studentName ||
+          s.username === studentData.studentUsername ||
           s.email === studentData.studentEmail
         );
+        
         if (student) {
+          console.log('✅ Found matching student, opening message modal');
           handleSendMessageClick(student);
+        } else {
+          console.log('❌ No matching student found in current list');
         }
-        sessionStorage.removeItem('adminNavigation');
+        
+        // Clear the stored data after use
+        sessionStorage.removeItem('adminMessageStudent');
+      } catch (error) {
+        console.error('Error parsing stored student data:', error);
+        sessionStorage.removeItem('adminMessageStudent');
       }
     }
   }, [students]);
@@ -60,6 +74,14 @@ const AdminMessageStudents = () => {
   useEffect(() => {
     filterStudents();
   }, [students, searchTerm, filterCriteria]);
+
+  // Get student display name
+  const getStudentDisplayName = (student) => {
+    if (student.profile?.firstName && student.profile?.lastName) {
+      return `${student.profile.firstName} ${student.profile.lastName}`;
+    }
+    return student.username || student.email || 'Unknown User';
+  };
 
   // Helper functions
   const showCustomAlert = (message, type = 'success') => {
@@ -126,13 +148,17 @@ const AdminMessageStudents = () => {
 
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(student =>
-        student.name?.toLowerCase().includes(term) ||
-        student.email?.toLowerCase().includes(term) ||
-        student.role?.toLowerCase().includes(term) ||
-        student.status?.toLowerCase().includes(term) ||
-        new Date(student.createdAt).toLocaleDateString().toLowerCase().includes(term)
-      );
+      filtered = filtered.filter(student => {
+        const displayName = getStudentDisplayName(student).toLowerCase();
+        return (
+          displayName.includes(term) ||
+          student.username?.toLowerCase().includes(term) ||
+          student.email?.toLowerCase().includes(term) ||
+          student.role?.toLowerCase().includes(term) ||
+          (student.active ? 'active' : 'inactive').includes(term) ||
+          new Date(student.createdAt).toLocaleDateString().toLowerCase().includes(term)
+        );
+      });
     }
 
     if (filterCriteria.role) {
@@ -170,6 +196,7 @@ const AdminMessageStudents = () => {
     setShowMessageModal(true);
   };
 
+  // FIXED: Using the working endpoint without /admin prefix
   const handleSendMessage = async () => {
     if (!messageSubject.trim() || !messageContent.trim()) {
       showCustomAlert('Please enter both subject and message content.', 'error');
@@ -178,17 +205,18 @@ const AdminMessageStudents = () => {
 
     setSendingMessage(true);
     try {
-      const response = await api.post('/admin/send-message', {
+      console.log('📨 Sending message to:', selectedStudent.email);
+      
+      // USE THE SIMPLE ENDPOINT THAT WORKS - REMOVED /admin PREFIX
+      const response = await api.post('/send-message', {
         studentId: selectedStudent._id,
         studentEmail: selectedStudent.email,
         subject: messageSubject.trim(),
-        message: messageContent.trim(),
-        category: 'general',
-        important: false
+        message: messageContent.trim()
       });
 
       if (response.data.success) {
-        showCustomAlert(`Message sent successfully to ${selectedStudent.name}!`, 'success');
+        showCustomAlert(`Message sent successfully to ${getStudentDisplayName(selectedStudent)}!`, 'success');
         setShowMessageModal(false);
         setMessageSubject('');
         setMessageContent('');
@@ -572,8 +600,10 @@ const AdminMessageStudents = () => {
                               </td>
                               <td>
                                 <div>
-                                  <h6 className="mb-1 fw-bold text-dark">{student.name}</h6>
+                                  <h6 className="mb-1 fw-bold text-dark">{getStudentDisplayName(student)}</h6>
                                   <small className="text-muted">{student.email}</small>
+                                  <br/>
+                                  <small className="text-muted">Username: {student.username}</small>
                                   <br/>
                                   <small className="text-muted">ID: {student._id}</small>
                                 </div>
@@ -642,7 +672,7 @@ const AdminMessageStudents = () => {
                 <div className="modal-header text-white" style={{backgroundColor: '#17a2b8'}}>
                   <h5 className="modal-title">
                     <i className="fas fa-envelope me-2"></i>
-                    Send Message to {selectedStudent.name}
+                    Send Message to {getStudentDisplayName(selectedStudent)}
                   </h5>
                   <button type="button" className="btn-close btn-close-white" onClick={() => setShowMessageModal(false)}></button>
                 </div>
@@ -654,7 +684,7 @@ const AdminMessageStudents = () => {
                         <i className={`fas ${getRoleIcon(selectedStudent.role)}`}></i>
                       </div>
                       <div>
-                        <h6 className="mb-0">{selectedStudent.name}</h6>
+                        <h6 className="mb-0">{getStudentDisplayName(selectedStudent)}</h6>
                         <small className="text-muted">{selectedStudent.email}</small>
                       </div>
                     </div>

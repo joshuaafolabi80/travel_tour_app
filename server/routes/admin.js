@@ -1,4 +1,4 @@
-// server/routes/admin.js
+// server/routes/admin.js - COMPLETE UNABRIDGED VERSION
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -763,15 +763,17 @@ router.get('/admin/students/:id', authMiddleware, adminMiddleware, async (req, r
   }
 });
 
-// Send message to student with real email functionality
+// FIXED: Send message to student with proper error handling
 router.post('/admin/send-message', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    console.log('📨 ADMIN: Sending message to student', req.body);
+    
     const { studentId, studentEmail, subject, message, category = 'general', important = false } = req.body;
     
-    if (!studentId || !studentEmail || !message) {
+    if (!studentId || !message) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Student ID, email, and message are required' 
+        message: 'Student ID and message are required' 
       });
     }
 
@@ -785,24 +787,23 @@ router.post('/admin/send-message', authMiddleware, adminMiddleware, async (req, 
     const newMessage = new Message({
       fromAdmin: req.user._id,
       toStudent: studentId,
-      studentEmail: studentEmail,
+      studentEmail: studentEmail || student.email,
       subject: subject || `Message from ${req.user.username}`,
       message: message,
       category: category,
       important: important,
+      messageType: 'admin_to_student',
       read: false
     });
 
     await newMessage.save();
 
-    // Increment student's unread message count
-    if (student.incrementUnreadMessages) {
-      await student.incrementUnreadMessages();
-    }
-
-    // Increment admin message count
+    // Update student's notification counts
     await User.findByIdAndUpdate(studentId, {
-      $inc: { adminMessageCount: 1 }
+      $inc: { 
+        unreadMessages: 1,
+        adminMessageCount: 1 
+      }
     });
 
     // Send email notification if student has email notifications enabled
@@ -812,7 +813,7 @@ router.post('/admin/send-message', authMiddleware, adminMiddleware, async (req, 
         
         const mailOptions = {
           from: process.env.EMAIL_USER,
-          to: studentEmail,
+          to: studentEmail || student.email,
           subject: subject || `Message from Admin - ${process.env.APP_NAME || 'The Conclave Academy'}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -833,15 +834,14 @@ router.post('/admin/send-message', authMiddleware, adminMiddleware, async (req, 
         };
 
         await transporter.sendMail(mailOptions);
-        console.log(`Email sent successfully to ${studentEmail}`);
+        console.log(`✅ Email sent successfully to ${studentEmail || student.email}`);
       } catch (emailError) {
-        console.error('Error sending email:', emailError);
+        console.error('❌ Error sending email:', emailError);
         // Don't fail the entire request if email fails
       }
     }
 
-    // Update notification counts for the student
-    await updateStudentNotificationCount(studentId);
+    console.log(`✅ Message sent successfully to student ${studentId}`);
 
     res.json({ 
       success: true, 
@@ -849,14 +849,17 @@ router.post('/admin/send-message', authMiddleware, adminMiddleware, async (req, 
       data: {
         messageId: newMessage._id,
         studentId: studentId,
-        studentEmail: studentEmail,
+        studentEmail: studentEmail || student.email,
         subject: newMessage.subject,
         sentAt: newMessage.createdAt
       }
     });
   } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).json({ success: false, message: 'Error sending message' });
+    console.error('❌ Error sending message:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error sending message: ' + error.message 
+    });
   }
 });
 
@@ -887,7 +890,8 @@ router.post('/send-message', authMiddleware, adminMiddleware, async (req, res) =
       message: message,
       category: 'general',
       important: false,
-      read: false
+      read: false,
+      messageType: 'admin_to_student'
     });
 
     await newMessage.save();
