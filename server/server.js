@@ -1,4 +1,4 @@
-// server.js - COMPLETE FIXED VERSION WITH QUESTION BREAKDOWN
+// server.js - COMPLETE FIXED VERSION WITH ADMIN QUIZ ROUTES
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -100,8 +100,10 @@ app.get('/api/debug-routes', (req, res) => {
     '/api/quiz/submit',
     '/api/quiz/results', // POST route for quiz submission
     '/api/quiz/results/:id',
+    '/api/quiz/results/admin', // 🚨 ADDED: Admin quiz results route
     '/api/notifications/counts',
     '/api/notifications/mark-admin-messages-read',
+    '/api/notifications/mark-read',
     '/api/direct-courses/:id/view',
     '/api/debug/quiz-by-destination' // 🚨 ADDED: Debug route for course questions
   ];
@@ -576,6 +578,39 @@ app.get('/api/quiz/results', async (req, res) => {
   }
 });
 
+// 🚨 ADDED: ADMIN QUIZ RESULTS ROUTE (Around line 380 as mentioned)
+app.get('/api/quiz/results/admin', async (req, res) => {
+  try {
+    console.log('📊 Admin fetching all quiz results');
+    
+    const QuizResult = require('./models/QuizResult');
+    
+    // Get all quiz results with user information
+    const results = await QuizResult.find()
+      .sort({ submittedAt: -1 })
+      .populate('userId', 'username email'); // Populate user details if needed
+
+    console.log(`✅ Admin found ${results.length} quiz results total`);
+
+    res.json({
+      success: true,
+      results: results,
+      total: results.length,
+      totalCount: results.length, // 🚨 ADDED: For frontend compatibility
+      collection: 'quiz_results',
+      message: 'Admin quiz results retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching admin quiz results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching admin quiz results',
+      error: error.message
+    });
+  }
+});
+
 app.get('/api/quiz/results/:id', async (req, res) => {
   try {
     const resultId = req.params.id;
@@ -694,6 +729,58 @@ app.put('/api/notifications/mark-admin-messages-read', authMiddleware, async (re
   }
 });
 
+// 🚨 ADDED: MARK READ ENDPOINT FOR ADMIN (Around line 250 as mentioned)
+app.put('/api/quiz/results/mark-read', async (req, res) => {
+  try {
+    const { resultIds } = req.body;
+    
+    console.log(`🔔 Marking quiz results as read:`, resultIds);
+    
+    // 🚨 FIX: Make resultIds optional - if not provided, mark all as read
+    if (!resultIds || !Array.isArray(resultIds) || resultIds.length === 0) {
+      console.log('⚠️ No specific resultIds provided, marking all results as read');
+      
+      const QuizResult = require('./models/QuizResult');
+      const updateResult = await QuizResult.updateMany(
+        { readByAdmin: { $ne: true } },
+        { $set: { readByAdmin: true, readAt: new Date() } }
+      );
+
+      console.log(`✅ Marked ${updateResult.modifiedCount} quiz results as read`);
+
+      return res.json({
+        success: true,
+        message: `Marked ${updateResult.modifiedCount} quiz results as read`,
+        modifiedCount: updateResult.modifiedCount
+      });
+    }
+
+    const QuizResult = require('./models/QuizResult');
+    
+    // Mark specific results as read
+    const updateResult = await QuizResult.updateMany(
+      { _id: { $in: resultIds } },
+      { $set: { readByAdmin: true, readAt: new Date() } }
+    );
+
+    console.log(`✅ Marked ${updateResult.modifiedCount} quiz results as read`);
+
+    res.json({
+      success: true,
+      message: `Marked ${updateResult.modifiedCount} quiz results as read`,
+      modifiedCount: updateResult.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('Error marking quiz results as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking quiz results as read',
+      error: error.message
+    });
+  }
+});
+
 // All routes after this middleware will require authentication
 app.use(authMiddleware);
 
@@ -766,7 +853,7 @@ app.get('/api/debug/auth-test', async (req, res) => {
     });
   } catch (error) {
     console.error('🐛 DEBUG Auth Error:', error);
-    res.status(401).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -998,6 +1085,8 @@ const startServer = async () => {
       console.log(`📍 Quiz questions: http://localhost:${PORT}/api/quiz/questions`);
       console.log(`📍 Quiz submit (route 1): http://localhost:${PORT}/api/quiz/submit`);
       console.log(`📍 Quiz submit (route 2): http://localhost:${PORT}/api/quiz/results`);
+      console.log(`📍 Quiz results admin: http://localhost:${PORT}/api/quiz/results/admin`); // 🚨 ADDED
+      console.log(`📍 Mark quiz read: http://localhost:${PORT}/api/quiz/results/mark-read`); // 🚨 ADDED
       console.log(`📍 Quiz collections debug: http://localhost:${PORT}/api/debug/quiz-collections`);
       console.log(`📍 Quiz by destination debug: http://localhost:${PORT}/api/debug/quiz-by-destination`);
       console.log(`📍 Document viewing: http://localhost:${PORT}/api/direct-courses/:id/view`);

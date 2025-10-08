@@ -93,7 +93,8 @@ const AdminQuizCompleted = () => {
       
       if (response.data.success) {
         setQuizResults(response.data.results);
-        setTotalItems(response.data.totalCount);
+        // 🚨 FIX: Use totalCount if available, otherwise use total or results length
+        setTotalItems(response.data.totalCount || response.data.total || response.data.results.length);
         
         // Mark notifications as read when admin views them
         await markNotificationsAsRead();
@@ -110,8 +111,10 @@ const AdminQuizCompleted = () => {
 
   const markNotificationsAsRead = async () => {
     try {
+      // 🚨 FIX: Send empty object instead of nothing to avoid 400 error
       await api.put('/notifications/mark-read', { type: 'quiz_completed_admin' });
-      await api.put('/quiz/results/mark-read');
+      // 🚨 FIX: Send empty array to mark all results as read
+      await api.put('/quiz/results/mark-read', { resultIds: [] });
     } catch (error) {
       console.error('Error marking notifications as read:', error);
     }
