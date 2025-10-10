@@ -1,0 +1,64 @@
+/* src/components/CourseQuestions.css - COMPLETELY NEW FILE */
+.course-questions-container {
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+.question-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid #dee2e6;
+}
+
+.question-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+}
+
+.question-meta {
+  font-size: 0.9rem;
+}
+
+.question-meta small {
+  margin-bottom: 0.25rem;
+}
+
+/* Specific styles for general courses */
+.card.border-primary .card-header {
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+}
+
+/* Specific styles for masterclass courses */
+.card.border-warning .card-header {
+  background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+}
+
+.card.border-warning .card-header .badge.bg-dark {
+  background: #343a40 !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .course-questions-container .display-5 {
+    font-size: 2rem;
+  }
+  
+  .question-card {
+    margin-bottom: 1rem;
+  }
+}
+
+/* Animation for cards */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.question-card {
+  animation: fadeInUp 0.5s ease;
+}

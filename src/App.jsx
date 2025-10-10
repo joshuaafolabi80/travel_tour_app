@@ -1,4 +1,4 @@
-// src/App.jsx - FIXED VERSION
+// src/App.jsx - COMPLETE FIXED VERSION WITHOUT ROUTER
 import React, { useState, useEffect } from 'react';
 import { TransitionGroup, CSSTransition } from 'react-transition-group';
 import { jwtDecode } from 'jwt-decode';
@@ -12,12 +12,17 @@ import QuizScores from './components/QuizScores';
 import AdminQuizCompleted from './components/AdminQuizCompleted';
 import GeneralCourses from './components/GeneralCourses';
 import MasterclassCourses from './components/MasterclassCourses';
+import CourseAndRemarks from './components/CourseAndRemarks';
+import AdminCourseCompleted from './components/AdminCourseCompleted';
 import ContactUs from './components/ContactUs';
 import MessageFromStudents from './components/MessageFromStudents';
 import MessageFromAdmin from './components/MessageFromAdmin';
 import AdminStudents from './components/AdminStudents';
 import AdminMessageStudents from './components/AdminMessageStudents';
 import AdminManageCourses from './components/AdminManageCourses';
+import GeneralCourseQuestions from './components/GeneralCourseQuestions';
+import MasterclassCourseQuestions from './components/MasterclassCourseQuestions';
+import QuizAttempt from './components/QuizAttempt';
 import './App.css';
 
 // Reusable Slider Component for both Splash Screen and Home Page
@@ -138,29 +143,24 @@ const App = () => {
     }
   };
 
-  // FIXED: Update fetchNotificationCounts to use correct endpoint
   const fetchNotificationCounts = async () => {
     if (!isLoggedIn || !userData) return;
     
     try {
-      // Use the correct endpoint that exists in courses.js
       const response = await api.get('/courses/notification-counts');
       
       if (response.data.success) {
         const clearedNotifications = JSON.parse(localStorage.getItem('clearedNotifications') || '{}');
         const currentTime = Date.now();
-        const oneHour = 60 * 60 * 1000; // Notifications stay cleared for 1 hour
+        const oneHour = 60 * 60 * 1000;
         
         const updatedCounts = { ...response.data.counts };
 
-        // Add course notification counts for students
         if (userRole === 'student') {
           try {
-            // Use the data from the main notification counts response
             updatedCounts.generalCourses = response.data.generalCourses || 0;
             updatedCounts.masterclassCourses = response.data.masterclassCourses || 0;
             
-            // Get admin messages count for students
             const messagesResponse = await api.get('/notifications/admin-messages/' + userData.id);
             if (messagesResponse.data.success) {
               updatedCounts.adminMessages = messagesResponse.data.unreadCount || 0;
@@ -173,7 +173,6 @@ const App = () => {
           }
         }
 
-        // For admin, get messages from students count
         if (userRole === 'admin') {
           try {
             const messagesResponse = await api.get('/admin/messages/count');
@@ -186,7 +185,6 @@ const App = () => {
           }
         }
         
-        // Filter out notifications that were cleared recently
         Object.keys(clearedNotifications).forEach(key => {
           if (currentTime - clearedNotifications[key] < oneHour) {
             updatedCounts[key] = 0;
@@ -197,7 +195,6 @@ const App = () => {
       }
     } catch (error) {
       console.error('Error fetching notification counts:', error);
-      // Set default counts on error to prevent breaking the app
       setNotificationCounts({
         quizScores: 0,
         courseRemarks: 0,
@@ -212,20 +209,17 @@ const App = () => {
     }
   };
 
-  // Function to clear specific notification when menu is clicked
   const clearNotification = (notificationType) => {
     setNotificationCounts(prev => ({
       ...prev,
       [notificationType]: 0
     }));
     
-    // Store in localStorage to persist across refreshes
     const clearedNotifications = JSON.parse(localStorage.getItem('clearedNotifications') || '{}');
     clearedNotifications[notificationType] = Date.now();
     localStorage.setItem('clearedNotifications', JSON.stringify(clearedNotifications));
   };
 
-  // Function to mark notifications as read when menu is clicked
   const markNotificationsAsRead = async (notificationType) => {
     try {
       if (notificationType === 'quizScores' && userData) {
@@ -235,7 +229,6 @@ const App = () => {
         });
       } else if (notificationType === 'quizCompleted' && userRole === 'admin') {
         await api.put('/quiz/results/mark-read-admin');
-        // Also refetch quiz results to update the read status
         fetchNotificationCounts();
       } else if (notificationType === 'adminMessages' && userRole === 'student') {
         await api.put('/notifications/mark-admin-messages-read');
@@ -247,15 +240,14 @@ const App = () => {
     }
   };
 
-  // Add this function to handle notification clearing properly
   const handleMenuClick = (item) => {
-    // Correctly clear notification badge using the specific notificationKey
+    console.log('🔄 Menu clicked:', item.name);
+    
     if (item.notificationKey && item.notification > 0) {
       clearNotification(item.notificationKey);
-      // Mark notifications as read in the database
       markNotificationsAsRead(item.notificationKey);
     }
-    // Execute the original action
+    
     if (item.action) {
       item.action();
     }
@@ -271,6 +263,12 @@ const App = () => {
         setUserData(decoded);
         setShowSplash(false);
         fetchNotificationCounts();
+        
+        if (decoded.role === 'admin') {
+          setCurrentPage('admin-students');
+        } else {
+          setCurrentPage('home');
+        }
       } else {
         localStorage.removeItem('authToken');
         setShowSplash(true);
@@ -281,9 +279,7 @@ const App = () => {
   useEffect(() => {
     let interval;
     if (isLoggedIn) {
-      // Fetch notifications immediately when logged in
       fetchNotificationCounts();
-      // Then set up interval for periodic updates
       interval = setInterval(fetchNotificationCounts, 30000);
     }
     return () => clearInterval(interval);
@@ -382,7 +378,6 @@ const App = () => {
   const handleSelectDestination = async (destinationId) => {
     setCurrentPage('loading');
     try {
-      // Use the main courses endpoint that now accepts destination names
       const response = await api.get(`/courses/${destinationId}`);
       if (response.data.success) {
         setSelectedCourse(response.data.course);
@@ -402,9 +397,7 @@ const App = () => {
     setCurrentPage('full-course-content');
   };
 
-  // 🚨 FIXED: Handle quiz completion properly
   const handleQuizComplete = () => {
-    // Navigate to quiz scores page after quiz completion
     setCurrentPage('quiz-scores');
   };
 
@@ -417,6 +410,7 @@ const App = () => {
   };
 
   const navigateTo = (page) => {
+    console.log('📍 Navigating to:', page);
     setCurrentPage(page);
     setShowMenu(false);
   };
@@ -560,6 +554,71 @@ const App = () => {
     return userMenuItems;
   };
 
+  const HomePage = () => {
+    return (
+      <div className="home-page-container">
+        <div className="homepage-hero">
+          <HeroSlider
+            images={splashImages}
+            texts={splashTexts}
+            staticTitle="The Conclave Academy"
+            isHomepage={true}
+          />
+          <div className="hero-content">
+            <h2 className="hero-subtitle"></h2>
+            <button className="hero-cta-button">
+              Get Certified Today!
+            </button>
+          </div>
+        </div>
+        <div className="navigation-grid">
+          <div className="nav-grid-item" onClick={() => navigateTo('destinations')}>
+            <i className="fas fa-umbrella-beach nav-icon"></i>
+            <span className="nav-text">Destinations</span>
+          </div>
+          <div className="nav-grid-item">
+            <i className="fas fa-hotel nav-icon"></i>
+            <span className="nav-text">Hotels</span>
+          </div>
+          <div className="nav-grid-item">
+            <i className="fas fa-coffee nav-icon"></i>
+            <span className="nav-text">Experiences</span>
+          </div>
+          <div className="nav-grid-item">
+            <i className="fas fa-briefcase nav-icon"></i>
+            <span className="nav-text">Business Course</span>
+          </div>
+          <div className="nav-grid-item">
+            <i className="fas fa-blog nav-icon"></i>
+            <span className="nav-text">Blog</span>
+          </div>
+          <div className="nav-grid-item">
+            <i className="fas fa-video nav-icon"></i>
+            <span className="nav-text">Online Webinar</span>
+          </div>
+        </div>
+        <section className="packages-section">
+          <h3 className="packages-title">Explore Travel Packages ✈️</h3>
+          <p className="packages-description">
+            Discover exciting travel packages that your students can learn to sell and earn commissions!
+            From exotic destinations to unique experiences, we've got something for everyone.
+          </p>
+          <button className="packages-button primary-button">
+            View Packages
+          </button>
+        </section>
+      </div>
+    );
+  };
+
+  const LoadingPage = () => (
+    <div className="d-flex justify-content-center align-items-center" style={{height: '50vh'}}>
+      <div className="spinner-border text-primary" role="status">
+        <span className="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  );
+
   return (
     <div className="app-container">
       <link
@@ -647,60 +706,8 @@ const App = () => {
             </div>
           </CSSTransition>
           <main className="main-content-area">
-            {currentPage === 'home' && (
-              <div className="home-page-container">
-                <div className="homepage-hero">
-                  <HeroSlider
-                    images={splashImages}
-                    texts={splashTexts}
-                    staticTitle="The Conclave Academy"
-                    isHomepage={true}
-                  />
-                  <div className="hero-content">
-                    <h2 className="hero-subtitle"></h2>
-                    <button className="hero-cta-button">
-                      Get Certified Today!
-                    </button>
-                  </div>
-                </div>
-                <div className="navigation-grid">
-                  <div className="nav-grid-item" onClick={() => navigateTo('destinations')}>
-                    <i className="fas fa-umbrella-beach nav-icon"></i>
-                    <span className="nav-text">Destinations</span>
-                  </div>
-                  <div className="nav-grid-item">
-                    <i className="fas fa-hotel nav-icon"></i>
-                    <span className="nav-text">Hotels</span>
-                  </div>
-                  <div className="nav-grid-item">
-                    <i className="fas fa-coffee nav-icon"></i>
-                    <span className="nav-text">Experiences</span>
-                  </div>
-                  <div className="nav-grid-item">
-                    <i className="fas fa-briefcase nav-icon"></i>
-                    <span className="nav-text">Business Course</span>
-                  </div>
-                  <div className="nav-grid-item">
-                    <i className="fas fa-blog nav-icon"></i>
-                    <span className="nav-text">Blog</span>
-                  </div>
-                  <div className="nav-grid-item">
-                    <i className="fas fa-video nav-icon"></i>
-                    <span className="nav-text">Online Webinar</span>
-                  </div>
-                </div>
-                <section className="packages-section">
-                  <h3 className="packages-title">Explore Travel Packages ✈️</h3>
-                  <p className="packages-description">
-                    Discover exciting travel packages that your students can learn to sell and earn commissions!
-                    From exotic destinations to unique experiences, we've got something for everyone.
-                  </p>
-                  <button className="packages-button primary-button">
-                    View Packages
-                  </button>
-                </section>
-              </div>
-            )}
+            {/* SIMPLE STATE-BASED PAGE RENDERING */}
+            {currentPage === 'home' && <HomePage />}
             {currentPage === 'destinations' && <DestinationsPage onSelectDestination={handleSelectDestination} />}
             {currentPage === 'destination-overview' && selectedCourse && (
               <DestinationOverview course={selectedCourse} onStartCourse={handleStartCourse} />
@@ -708,8 +715,6 @@ const App = () => {
             {currentPage === 'full-course-content' && selectedCourse && (
               <FullCourseContent course={selectedCourse} onTakeQuiz={handleTakeQuiz} />
             )}
-            
-            {/* 🚨 FIXED: QuizPlatform with correct props */}
             {currentPage === 'quiz-platform' && selectedCourse && (
               <QuizPlatform 
                 course={selectedCourse} 
@@ -717,29 +722,62 @@ const App = () => {
               />
             )}
             
-            {/* 🚨 FIXED: QuizScores route */}
+            {/* 🚨 ADDED: Course Question Quiz Routes */}
+            {currentPage === 'general-quiz-attempt' && <QuizAttempt navigateTo={navigateTo} />}
+            {currentPage === 'masterclass-quiz-attempt' && <QuizAttempt navigateTo={navigateTo} />}
+            
             {currentPage === 'quiz-scores' && <QuizScores />}
             
             {/* User Pages */}
-            {currentPage === 'general-courses' && <GeneralCourses />}
+            {currentPage === 'general-courses' && <GeneralCourses navigateTo={navigateTo} />}
             {currentPage === 'masterclass-courses' && <MasterclassCourses navigateTo={navigateTo} />}
+            {currentPage === 'course-remarks' && <CourseAndRemarks />}
             {currentPage === 'contact-us' && <ContactUs />}
             {currentPage === 'admin-messages' && <MessageFromAdmin />}
+            {currentPage === 'general-course-questions' && <GeneralCourseQuestions navigateTo={navigateTo} />}
+            {currentPage === 'masterclass-course-questions' && <MasterclassCourseQuestions navigateTo={navigateTo} />}
             
             {/* Admin Pages */}
             {currentPage === 'admin-students' && <AdminStudents />}
             {currentPage === 'admin-message-students' && <AdminMessageStudents />}
             {currentPage === 'admin-quiz-completed' && <AdminQuizCompleted />}
+            {currentPage === 'admin-course-completed' && <AdminCourseCompleted />}
             {currentPage === 'admin-messages-from-students' && <MessageFromStudents />}
             {currentPage === 'admin-manage-courses' && <AdminManageCourses />}
             
-            {currentPage === 'loading' && (
-              <div className="d-flex justify-content-center align-items-center" style={{height: '50vh'}}>
-                <div className="spinner-border text-primary" role="status">
-                  <span className="visually-hidden">Loading...</span>
-                </div>
+            {/* Placeholder Pages */}
+            {currentPage === 'important-information' && (
+              <div className="container py-4">
+                <h2>Important Information</h2>
+                <p>Content coming soon...</p>
               </div>
             )}
+            {currentPage === 'community' && (
+              <div className="container py-4">
+                <h2>Community</h2>
+                <p>Community features coming soon...</p>
+              </div>
+            )}
+            {currentPage === 'rate-share' && (
+              <div className="container py-4">
+                <h2>Rate and Share</h2>
+                <p>Rating and sharing features coming soon...</p>
+              </div>
+            )}
+            {currentPage === 'admin-send-information' && (
+              <div className="container py-4">
+                <h2>Send Information</h2>
+                <p>Admin information sending features coming soon...</p>
+              </div>
+            )}
+            {currentPage === 'admin-community' && (
+              <div className="container py-4">
+                <h2>Admin Community</h2>
+                <p>Admin community features coming soon...</p>
+              </div>
+            )}
+            
+            {currentPage === 'loading' && <LoadingPage />}
           </main>
           <footer className="app-footer">
             &copy; {new Date().getFullYear()} The Conclave Academy. All rights reserved.

@@ -1,4 +1,3 @@
-// server.js - COMPLETE FIXED VERSION WITH ADMIN QUIZ ROUTES
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -38,7 +37,231 @@ const messageRoutes = require('./routes/messages');
 app.use('/api/auth', authRouter);
 app.use('/api/messages', messageRoutes);
 
-// 🚨 ADD: Notification endpoint for quiz scores (ADD THIS HERE)
+// 🚨 CRITICAL FIX: ADD NOTIFICATION COUNTS ROUTE BEFORE COURSE-BY-ID ROUTE
+app.get('/api/courses/notification-counts', async (req, res) => {
+  try {
+    console.log('🔔 Fetching course notification counts');
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const DocumentCourse = require('./models/DocumentCourse');
+    
+    // Count general courses
+    const generalCoursesCount = await DocumentCourse.countDocuments({ 
+      courseType: 'general',
+      isActive: true 
+    });
+    
+    // Count masterclass courses  
+    const masterclassCoursesCount = await DocumentCourse.countDocuments({ 
+      courseType: 'masterclass',
+      isActive: true 
+    });
+
+    console.log(`✅ Course counts - General: ${generalCoursesCount}, Masterclass: ${masterclassCoursesCount}`);
+
+    res.json({
+      success: true,
+      counts: {
+        generalCourses: generalCoursesCount,
+        masterclassCourses: masterclassCoursesCount,
+        quizScores: 0,
+        courseRemarks: 0,
+        importantInfo: 0,
+        adminMessages: 0
+      },
+      generalCourses: generalCoursesCount,
+      masterclassCourses: masterclassCoursesCount,
+      message: 'Course notification counts retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching course notification counts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching notification counts',
+      error: error.message,
+      counts: {
+        generalCourses: 0,
+        masterclassCourses: 0,
+        quizScores: 0,
+        courseRemarks: 0,
+        importantInfo: 0,
+        adminMessages: 0
+      }
+    });
+  }
+});
+
+// 🚨 CRITICAL FIX: ADD ADMIN MESSAGES ROUTE
+app.get('/api/notifications/admin-messages/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    console.log('📨 Fetching admin messages for user:', userId);
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    // For now, return empty messages - you can implement real message fetching later
+    console.log(`✅ Admin messages count for user ${userId}: 0`);
+
+    res.json({
+      success: true,
+      unreadCount: 0,
+      messages: [],
+      message: 'Admin messages retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching admin messages:', error);
+    res.json({
+      success: true,
+      unreadCount: 0,
+      messages: []
+    });
+  }
+});
+
+// 🚨 ADD: Course viewing routes
+app.get('/api/courses/:id', async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    console.log('📖 Fetching course details:', courseId);
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const DocumentCourse = require('./models/DocumentCourse');
+    const course = await DocumentCourse.findById(courseId);
+    
+    if (!course) {
+      console.log('❌ Course not found:', courseId);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Course not found' 
+      });
+    }
+
+    console.log('✅ Course found:', course.title);
+    
+    res.json({
+      success: true,
+      course: course,
+      message: 'Course details retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching course:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching course details',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 ADD: Get courses by type with pagination
+app.get('/api/courses', async (req, res) => {
+  try {
+    const { type, page = 1, limit = 50 } = req.query;
+    console.log('📚 Fetching courses:', { type, page, limit });
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const DocumentCourse = require('./models/DocumentCourse');
+    
+    // Build query
+    let query = {};
+    if (type && type !== 'all') {
+      query.courseType = type;
+    }
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get courses with pagination
+    const courses = await DocumentCourse.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    // Get total count
+    const totalCount = await DocumentCourse.countDocuments(query);
+
+    console.log(`✅ Found ${courses.length} ${type || 'all'} courses`);
+
+    res.json({
+      success: true,
+      courses: courses,
+      totalCount: totalCount,
+      currentPage: pageNum,
+      totalPages: Math.ceil(totalCount / limitNum),
+      message: `${type || 'All'} courses retrieved successfully`
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching courses:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching courses',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 ADD: Validate masterclass access route
+app.post('/api/courses/validate-masterclass-access', async (req, res) => {
+  try {
+    const { accessCode } = req.body;
+    console.log('🔐 Validating masterclass access code:', accessCode);
+    
+    // Simple validation - you can replace this with your actual validation logic
+    const validCodes = ['MASTER2024', 'PREMIUM123', 'ACCESS789'];
+    
+    if (validCodes.includes(accessCode)) {
+      res.json({
+        success: true,
+        message: 'Access granted to masterclass courses',
+        access: true
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid access code',
+        access: false
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error validating access code:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error validating access code',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 ADD: Notification endpoint for quiz scores
 app.put('/api/notifications/mark-read', async (req, res) => {
   try {
     const { type, userId } = req.body;
@@ -86,6 +309,11 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/debug-routes', (req, res) => {
   const routes = [
+    '/api/courses/notification-counts',
+    '/api/notifications/admin-messages/:userId', // 🚨 ADDED THIS ROUTE
+    '/api/courses/:id',
+    '/api/courses',
+    '/api/courses/validate-masterclass-access',
     '/api/messages/sent',
     '/api/messages/send-to-admin', 
     '/api/messages/test',
@@ -98,14 +326,25 @@ app.get('/api/debug-routes', (req, res) => {
     '/api/test',
     '/api/quiz/questions',
     '/api/quiz/submit',
-    '/api/quiz/results', // POST route for quiz submission
+    '/api/quiz/results',
     '/api/quiz/results/:id',
-    '/api/quiz/results/admin', // 🚨 ADDED: Admin quiz results route
+    '/api/quiz/results/admin',
     '/api/notifications/counts',
     '/api/notifications/mark-admin-messages-read',
     '/api/notifications/mark-read',
     '/api/direct-courses/:id/view',
-    '/api/debug/quiz-by-destination' // 🚨 ADDED: Debug route for course questions
+    '/api/debug/quiz-by-destination',
+    // Course management routes
+    '/api/admin/upload-general-questions',
+    '/api/admin/upload-masterclass-questions',
+    '/api/user/general-course-results',
+    '/api/user/masterclass-course-results',
+    '/api/admin/all-course-results',
+    '/api/admin/course-completed-notifications',
+    '/api/admin/mark-course-completed-read',
+    // Course questions routes
+    '/api/general-course-questions',
+    '/api/masterclass-course-questions'
   ];
   
   console.log('🐛 DEBUG: Listing available routes');
@@ -213,6 +452,84 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error loading course content'
+    });
+  }
+});
+
+// 🚨 ADDED: Route to fetch general course questions
+app.get('/api/general-course-questions', async (req, res) => {
+  try {
+    console.log('📝 Fetching general course questions');
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    
+    // Fetch all general course questions
+    const questionSets = await db.collection('general_course_questions')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    console.log(`✅ Found ${questionSets.length} general course question sets`);
+
+    res.json({
+      success: true,
+      questionSets: questionSets,
+      total: questionSets.length,
+      message: 'General course questions retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching general course questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching general course questions',
+      error: error.message
+    });
+  }
+});
+
+// 🚨 ADDED: Route to fetch masterclass course questions
+app.get('/api/masterclass-course-questions', async (req, res) => {
+  try {
+    console.log('📝 Fetching masterclass course questions');
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    
+    // Fetch all masterclass course questions
+    const questionSets = await db.collection('masterclass_course_questions')
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    console.log(`✅ Found ${questionSets.length} masterclass course question sets`);
+
+    res.json({
+      success: true,
+      questionSets: questionSets,
+      total: questionSets.length,
+      message: 'Masterclass course questions retrieved successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching masterclass course questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching masterclass course questions',
+      error: error.message
     });
   }
 });
@@ -557,7 +874,6 @@ app.get('/api/quiz/results', async (req, res) => {
     // 🚨 CRITICAL FIX: REMOVED .select('-answers') to INCLUDE detailed answers
     const results = await QuizResult.find({ userId: userId })
       .sort({ submittedAt: -1 });
-    // 🚨 REMOVED: .select('-answers') - This was excluding the question breakdown!
 
     console.log(`✅ Found ${results.length} quiz results for user ${userId}`);
 
@@ -578,7 +894,7 @@ app.get('/api/quiz/results', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: ADMIN QUIZ RESULTS ROUTE (Around line 380 as mentioned)
+// 🚨 ADDED: ADMIN QUIZ RESULTS ROUTE
 app.get('/api/quiz/results/admin', async (req, res) => {
   try {
     console.log('📊 Admin fetching all quiz results');
@@ -649,12 +965,23 @@ app.get('/api/notifications/counts', async (req, res) => {
     const userIdentifier = req.query.userId || 'default';
     const userRole = req.query.userRole || 'student';
 
-    // Return default counts - we'll implement real counts later
-    const defaultCounts = {
+    // Get course counts
+    const DocumentCourse = require('./models/DocumentCourse');
+    const generalCoursesCount = await DocumentCourse.countDocuments({ 
+      courseType: 'general',
+      isActive: true 
+    });
+    
+    const masterclassCoursesCount = await DocumentCourse.countDocuments({ 
+      courseType: 'masterclass',
+      isActive: true 
+    });
+
+    const counts = {
       quizScores: 0,
       courseRemarks: 0,
-      generalCourses: 0,
-      masterclassCourses: 0,
+      generalCourses: generalCoursesCount,
+      masterclassCourses: masterclassCoursesCount,
       importantInfo: 0,
       adminMessages: 0,
       quizCompleted: 0,
@@ -662,9 +989,11 @@ app.get('/api/notifications/counts', async (req, res) => {
       messagesFromStudents: 0
     };
 
+    console.log(`✅ Notification counts - General: ${generalCoursesCount}, Masterclass: ${masterclassCoursesCount}`);
+
     res.json({
       success: true,
-      counts: defaultCounts,
+      counts: counts,
       user: userIdentifier
     });
 
@@ -729,7 +1058,7 @@ app.put('/api/notifications/mark-admin-messages-read', authMiddleware, async (re
   }
 });
 
-// 🚨 ADDED: MARK READ ENDPOINT FOR ADMIN (Around line 250 as mentioned)
+// 🚨 ADDED: MARK READ ENDPOINT FOR ADMIN
 app.put('/api/quiz/results/mark-read', async (req, res) => {
   try {
     const { resultIds } = req.body;
@@ -783,6 +1112,194 @@ app.put('/api/quiz/results/mark-read', async (req, res) => {
 
 // All routes after this middleware will require authentication
 app.use(authMiddleware);
+
+// 🚨 ADDED: COURSE MANAGEMENT ROUTES - MOVED AFTER AUTH MIDDLEWARE
+// Admin routes for question upload
+app.post('/api/admin/upload-general-questions', async (req, res) => {
+  try {
+    const { title, description, questions } = req.body;
+    
+    const db = mongoose.connection.db;
+    const result = await db.collection('general_course_questions').insertOne({
+      title,
+      description,
+      questions,
+      courseType: 'general',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'General course questions uploaded successfully',
+      questionSetId: result.insertedId
+    });
+  } catch (error) {
+    console.error('Error uploading general questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading questions'
+    });
+  }
+});
+
+app.post('/api/admin/upload-masterclass-questions', async (req, res) => {
+  try {
+    const { title, description, questions } = req.body;
+    
+    const db = mongoose.connection.db;
+    const result = await db.collection('masterclass_course_questions').insertOne({
+      title,
+      description,
+      questions,
+      courseType: 'masterclass',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'Masterclass course questions uploaded successfully',
+      questionSetId: result.insertedId
+    });
+  } catch (error) {
+    console.error('Error uploading masterclass questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading questions'
+    });
+  }
+});
+
+// Routes for fetching results - NOW AFTER AUTH MIDDLEWARE
+app.get('/api/user/general-course-results', async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    const db = mongoose.connection.db;
+    const results = await db.collection('general_course_results')
+      .find({ userId })
+      .sort({ date: -1 })
+      .toArray();
+
+    res.json({
+      success: true,
+      results: results
+    });
+  } catch (error) {
+    console.error('Error fetching general course results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching results'
+    });
+  }
+});
+
+app.get('/api/user/masterclass-course-results', async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    const db = mongoose.connection.db;
+    const results = await db.collection('masterclass_course_results')
+      .find({ userId })
+      .sort({ date: -1 })
+      .toArray();
+
+    res.json({
+      success: true,
+      results: results
+    });
+  } catch (error) {
+    console.error('Error fetching masterclass course results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching results'
+    });
+  }
+});
+
+app.get('/api/admin/all-course-results', async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+    
+    // Combine results from both collections
+    const generalResults = await db.collection('general_course_results')
+      .find()
+      .sort({ date: -1 })
+      .toArray();
+
+    const masterclassResults = await db.collection('masterclass_course_results')
+      .find()
+      .sort({ date: -1 })
+      .toArray();
+
+    const allResults = [
+      ...generalResults.map(r => ({ ...r, courseType: 'general' })),
+      ...masterclassResults.map(r => ({ ...r, courseType: 'masterclass' }))
+    ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    res.json({
+      success: true,
+      results: allResults
+    });
+  } catch (error) {
+    console.error('Error fetching all course results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching results'
+    });
+  }
+});
+
+// Notification routes
+app.get('/api/admin/course-completed-notifications', async (req, res) => {
+  try {
+    // This would typically count unread submissions
+    const db = mongoose.connection.db;
+    const count = await db.collection('general_course_results')
+      .countDocuments({ readByAdmin: { $ne: true } }) +
+      await db.collection('masterclass_course_results')
+      .countDocuments({ readByAdmin: { $ne: true } });
+
+    res.json({
+      success: true,
+      count: count
+    });
+  } catch (error) {
+    console.error('Error counting notifications:', error);
+    res.json({
+      success: true,
+      count: 0
+    });
+  }
+});
+
+app.put('/api/admin/mark-course-completed-read', async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+    
+    await db.collection('general_course_results').updateMany(
+      { readByAdmin: { $ne: true } },
+      { $set: { readByAdmin: true, readAt: new Date() } }
+    );
+    
+    await db.collection('masterclass_course_results').updateMany(
+      { readByAdmin: { $ne: true } },
+      { $set: { readByAdmin: true, readAt: new Date() } }
+    );
+
+    res.json({
+      success: true,
+      message: 'All course completions marked as read'
+    });
+  } catch (error) {
+    console.error('Error marking as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking as read'
+    });
+  }
+});
 
 // 🚨 Authenticated Routes
 const courseRoutes = require('./routes/courses');
@@ -1082,14 +1599,30 @@ const startServer = async () => {
       console.log(`\n🎉 Server running on port ${PORT}`);
       console.log(`📍 API available at: http://localhost:${PORT}/api`);
       console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`📍 Course routes:`);
+      console.log(`📍   Notification counts: http://localhost:${PORT}/api/courses/notification-counts`);
+      console.log(`📍   Admin messages: http://localhost:${PORT}/api/notifications/admin-messages/:userId`); // 🚨 ADDED
+      console.log(`📍   Get courses: http://localhost:${PORT}/api/courses`);
+      console.log(`📍   Get course by ID: http://localhost:${PORT}/api/courses/:id`);
+      console.log(`📍   Validate masterclass: http://localhost:${PORT}/api/courses/validate-masterclass-access`);
+      console.log(`📍   Direct course view: http://localhost:${PORT}/api/direct-courses/:id/view`);
       console.log(`📍 Quiz questions: http://localhost:${PORT}/api/quiz/questions`);
       console.log(`📍 Quiz submit (route 1): http://localhost:${PORT}/api/quiz/submit`);
       console.log(`📍 Quiz submit (route 2): http://localhost:${PORT}/api/quiz/results`);
-      console.log(`📍 Quiz results admin: http://localhost:${PORT}/api/quiz/results/admin`); // 🚨 ADDED
-      console.log(`📍 Mark quiz read: http://localhost:${PORT}/api/quiz/results/mark-read`); // 🚨 ADDED
+      console.log(`📍 Quiz results admin: http://localhost:${PORT}/api/quiz/results/admin`);
+      console.log(`📍 Mark quiz read: http://localhost:${PORT}/api/quiz/results/mark-read`);
+      console.log(`📍 Course management routes:`);
+      console.log(`📍   Upload general questions: http://localhost:${PORT}/api/admin/upload-general-questions`);
+      console.log(`📍   Upload masterclass questions: http://localhost:${PORT}/api/admin/upload-masterclass-questions`);
+      console.log(`📍   General course results: http://localhost:${PORT}/api/user/general-course-results`);
+      console.log(`📍   Masterclass course results: http://localhost:${PORT}/api/user/masterclass-course-results`);
+      console.log(`📍   All course results (admin): http://localhost:${PORT}/api/admin/all-course-results`);
+      console.log(`📍   Course notifications: http://localhost:${PORT}/api/admin/course-completed-notifications`);
+      console.log(`📍   Mark course read: http://localhost:${PORT}/api/admin/mark-course-completed-read`);
+      console.log(`📍 General course questions: http://localhost:${PORT}/api/general-course-questions`);
+      console.log(`📍 Masterclass course questions: http://localhost:${PORT}/api/masterclass-course-questions`);
       console.log(`📍 Quiz collections debug: http://localhost:${PORT}/api/debug/quiz-collections`);
       console.log(`📍 Quiz by destination debug: http://localhost:${PORT}/api/debug/quiz-by-destination`);
-      console.log(`📍 Document viewing: http://localhost:${PORT}/api/direct-courses/:id/view`);
       console.log(`📍 Messaging system: http://localhost:${PORT}/api/messages/`);
       console.log(`📍 Debug route: http://localhost:${PORT}/api/debug/messages-sent`);
       console.log(`📍 Auth test: http://localhost:${PORT}/api/debug/auth-test`);
@@ -1098,6 +1631,7 @@ const startServer = async () => {
       console.log(`📍 Mark notifications read: http://localhost:${PORT}/api/notifications/mark-read`);
       console.log('\n📊 Enhanced logging enabled - all requests will be logged');
       console.log('🎯 Quiz system using: quiz_questions (120 docs) and quiz_results (3 docs) collections');
+      console.log('📚 Course management: general_course_questions, masterclass_course_questions collections');
     });
 
     // Attempt database connection in background

@@ -1,56 +1,134 @@
+// src/components/GeneralCourses.jsx - FIXED VERSION WITHOUT ROUTER
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
-const GeneralCourses = () => {
+const GeneralCourses = ({ navigateTo }) => {
   const [courses, setCourses] = useState([]);
+  const [questionSets, setQuestionSets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [documentLoading, setDocumentLoading] = useState(false);
   const [documentContent, setDocumentContent] = useState(null);
-  const [contentType, setContentType] = useState('text'); // 'text' or 'html'
+  const [contentType, setContentType] = useState('text');
+  const [activeTab, setActiveTab] = useState('courses');
+  const [questionsLoading, setQuestionsLoading] = useState(false);
 
   useEffect(() => {
     fetchCourses();
+    fetchQuestionSets();
   }, []);
 
   const fetchCourses = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Fetching general courses...');
+      
       const response = await api.get('/courses', {
         params: { type: 'general', page: 1, limit: 50 }
       });
       
+      console.log('📚 Courses response:', response.data);
+      
       if (response.data.success) {
-        setCourses(response.data.courses);
+        setCourses(response.data.courses || []);
+        console.log(`✅ Loaded ${response.data.courses?.length || 0} general courses`);
       } else {
-        setError('Failed to load courses');
+        setError('Failed to load courses: ' + (response.data.message || 'Unknown error'));
+        setCourses([]);
       }
     } catch (error) {
-      console.error('Error fetching courses:', error);
+      console.error('❌ Error fetching courses:', error);
       setError('Failed to load courses. Please try again later.');
+      setCourses([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const viewCourse = async (courseId) => {
+  const fetchQuestionSets = async () => {
     try {
-      const response = await api.get(`/courses/${courseId}`);
+      setQuestionsLoading(true);
+      console.log('🔄 Fetching general course questions...');
+      
+      const response = await api.get('/general-course-questions');
+      console.log('📝 Questions response:', response.data);
+      
       if (response.data.success) {
-        setSelectedCourse(response.data.course);
-        setShowCourseModal(true);
-        setDocumentContent(null);
-        setContentType('text');
+        setQuestionSets(response.data.questionSets || []);
+        console.log(`✅ Loaded ${response.data.questionSets?.length || 0} question sets`);
+      } else {
+        console.error('❌ Failed to load question sets:', response.data.message);
+        setQuestionSets([]);
       }
     } catch (error) {
-      console.error('Error fetching course details:', error);
-      alert('Failed to load course content.');
+      console.error('❌ Error fetching question sets:', error);
+      setQuestionSets([]);
+    } finally {
+      setQuestionsLoading(false);
     }
   };
 
-  // READ DOCUMENT CONTENT - WITH IMAGE SUPPORT
+  const handleCourseQuestionsTab = () => {
+    console.log('🎯 Navigating to General Course Questions');
+    if (navigateTo) {
+      navigateTo('general-course-questions');
+    }
+  };
+
+  const attemptQuestions = (questionSet) => {
+    if (!questionSet || !questionSet.questions || questionSet.questions.length === 0) {
+      alert('No questions available in this question set.');
+      return;
+    }
+    
+    console.log('🎯 Attempting questions:', questionSet.title);
+    console.log('📝 Questions available:', questionSet.questions?.length || 0);
+    
+    // Store question set data
+    const questionSetData = {
+      id: questionSet._id,
+      type: 'general',
+      title: questionSet.title,
+      description: questionSet.description,
+      questions: questionSet.questions
+    };
+    
+    localStorage.setItem('currentQuestionSet', JSON.stringify(questionSetData));
+    console.log('💾 Question set stored in localStorage');
+    
+    // 🚨 FIXED: Navigate to general-quiz-attempt instead of quiz-platform
+    if (navigateTo) {
+      navigateTo('general-quiz-attempt');
+    }
+  };
+
+  const viewCourse = async (courseId) => {
+    try {
+      console.log('🎯 Viewing course:', courseId);
+      setSelectedCourse(null);
+      setShowCourseModal(true);
+      setDocumentContent(null);
+      
+      const response = await api.get(`/courses/${courseId}`);
+      console.log('📄 Course details response:', response.data);
+      
+      if (response.data.success) {
+        setSelectedCourse(response.data.course);
+        console.log('✅ Course loaded successfully:', response.data.course.title);
+      } else {
+        console.error('❌ Failed to load course content');
+        alert('Failed to load course content: ' + (response.data.message || 'Unknown error'));
+        setShowCourseModal(false);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching course details:', error);
+      alert('Failed to load course content. Please try again.');
+      setShowCourseModal(false);
+    }
+  };
+
   const readDocumentInApp = async () => {
     if (!selectedCourse) return;
     
@@ -60,27 +138,20 @@ const GeneralCourses = () => {
       console.log('📖 Reading document content for course:', selectedCourse._id);
       
       const response = await api.get(`/direct-courses/${selectedCourse._id}/view`);
-      console.log('📄 API Response:', response.data);
+      console.log('📄 Document API Response:', response.data);
       
       if (response.data.success) {
         setContentType(response.data.contentType || 'text');
-        
-        if (response.data.contentType === 'html' || response.data.contentType === 'text') {
-          setDocumentContent(response.data.content);
-          console.log('📝 Document content loaded:', response.data.contentLength, 'characters');
-          console.log('🖼️ Has images:', response.data.hasImages);
-        } else if (response.data.contentType === 'error') {
-          setDocumentContent('Error: ' + response.data.content);
-        } else {
-          setDocumentContent(response.data.content || 'Document loaded but cannot be displayed.');
-        }
+        setDocumentContent(response.data.content);
+        console.log('✅ Document content loaded successfully');
       } else {
         setDocumentContent('Error: ' + (response.data.message || 'Failed to load document'));
+        console.error('❌ Document loading failed:', response.data.message);
       }
       
     } catch (error) {
       console.error('❌ Error reading document:', error);
-      setDocumentContent('Error loading document: ' + error.message);
+      setDocumentContent('Error loading document: ' + (error.response?.data?.message || error.message));
     } finally {
       setDocumentLoading(false);
     }
@@ -94,14 +165,17 @@ const GeneralCourses = () => {
     setContentType('text');
   };
 
-  // Format date function to handle different date fields
   const formatCourseDate = (course) => {
-    // Try different possible date fields
     if (course.uploadedAt) return new Date(course.uploadedAt).toLocaleDateString();
     if (course.createdAt) return new Date(course.createdAt).toLocaleDateString();
     if (course.date) return new Date(course.date).toLocaleDateString();
     if (course.updatedAt) return new Date(course.updatedAt).toLocaleDateString();
-    
+    return 'Date not available';
+  };
+
+  const formatQuestionSetDate = (questionSet) => {
+    if (questionSet.createdAt) return new Date(questionSet.createdAt).toLocaleDateString();
+    if (questionSet.updatedAt) return new Date(questionSet.updatedAt).toLocaleDateString();
     return 'Date not available';
   };
 
@@ -162,8 +236,8 @@ const GeneralCourses = () => {
                   </div>
                   <div className="col-md-4 text-md-end">
                     <div className="bg-white rounded p-3 d-inline-block text-primary">
-                      <h4 className="mb-0 fw-bold">{courses.length}</h4>
-                      <small>Total Courses Available</small>
+                      <h4 className="mb-0 fw-bold">{courses.length + questionSets.length}</h4>
+                      <small>Total Learning Items</small>
                     </div>
                   </div>
                 </div>
@@ -172,85 +246,207 @@ const GeneralCourses = () => {
           </div>
         </div>
 
-        <div className="row">
+        {/* Tab Navigation */}
+        <div className="row mb-4">
           <div className="col-12">
-            {courses.length === 0 ? (
-              <div className="card shadow-lg border-0">
-                <div className="card-body text-center py-5">
-                  <i className="fas fa-book-open fa-4x text-muted mb-3"></i>
-                  <h3 className="text-muted">No General Courses Available</h3>
-                  <p className="text-muted">
-                    There are no general courses available at the moment. 
-                    Check back later for new course additions.
-                  </p>
-                </div>
+            <div className="card shadow-sm border-0">
+              <div className="card-body p-0">
+                <ul className="nav nav-tabs nav-justified">
+                  <li className="nav-item">
+                    <button
+                      className={`nav-link ${activeTab === 'courses' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('courses')}
+                    >
+                      <i className="fas fa-book me-2"></i>General Courses
+                      <span className="badge bg-primary ms-2">{courses.length}</span>
+                    </button>
+                  </li>
+                  <li className="nav-item">
+                    <button
+                      className={`nav-link ${activeTab === 'questions' ? 'active' : ''}`}
+                      onClick={handleCourseQuestionsTab}
+                    >
+                      <i className="fas fa-question-circle me-2"></i>Course Questions
+                      <span className="badge bg-info ms-2">{questionSets.length}</span>
+                    </button>
+                  </li>
+                </ul>
               </div>
-            ) : (
-              <div className="row">
-                {courses.map((course) => (
-                  <div key={course._id} className="col-lg-6 col-xl-4 mb-4">
-                    <div className="card course-card h-100 shadow-sm border-0">
-                      <div className="card-body">
-                        <div className="d-flex justify-content-between align-items-start mb-3">
-                          <span className="badge bg-info fs-6">
-                            <i className="fas fa-book me-1"></i>
-                            General
-                          </span>
-                          <small className="text-muted">
-                            {formatCourseDate(course)}
-                          </small>
-                        </div>
-                        
-                        <h5 className="card-title text-dark mb-3">{course.title}</h5>
-                        <p className="card-text text-muted mb-3">
-                          {course.description ? (course.description.length > 120 
-                            ? `${course.description.substring(0, 120)}...` 
-                            : course.description) : 'No description available'
-                          }
-                        </p>
-                        
-                        <div className="course-meta mb-3">
-                          {course.fileName && (
-                            <small className="text-muted d-block">
-                              <i className="fas fa-file me-1"></i>
-                              {course.fileName}
-                            </small>
-                          )}
-                          {course.htmlContent && (
-                            <small className="text-success d-block">
-                              <i className="fas fa-image me-1"></i>
-                              Includes images and formatting
-                            </small>
-                          )}
-                        </div>
-                      </div>
-                      <div className="card-footer bg-transparent border-0 pt-0">
-                        <div className="d-grid gap-2">
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => viewCourse(course._id)}
-                          >
-                            <i className="fas fa-eye me-2"></i>View Course
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
+        {/* Courses Tab Content */}
+        {activeTab === 'courses' && (
+          <div className="row">
+            <div className="col-12">
+              {courses.length === 0 ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <i className="fas fa-book-open fa-4x text-muted mb-3"></i>
+                    <h3 className="text-muted">No General Courses Available</h3>
+                    <p className="text-muted">
+                      There are no general courses available at the moment. 
+                      Check back later for new course additions.
+                    </p>
+                    <button className="btn btn-primary" onClick={fetchCourses}>
+                      Refresh Courses
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row">
+                  {courses.map((course) => (
+                    <div key={course._id} className="col-lg-6 col-xl-4 mb-4">
+                      <div className="card course-card h-100 shadow-sm border-0">
+                        <div className="card-body">
+                          <div className="d-flex justify-content-between align-items-start mb-3">
+                            <span className="badge bg-info fs-6">
+                              <i className="fas fa-book me-1"></i>
+                              General Course
+                            </span>
+                            <small className="text-muted">
+                              {formatCourseDate(course)}
+                            </small>
+                          </div>
+                          
+                          <h5 className="card-title text-dark mb-3">{course.title}</h5>
+                          <p className="card-text text-muted mb-3">
+                            {course.description ? (course.description.length > 120 
+                              ? `${course.description.substring(0, 120)}...` 
+                              : course.description) : 'No description available'
+                            }
+                          </p>
+                          
+                          <div className="course-meta mb-3">
+                            {course.fileName && (
+                              <small className="text-muted d-block">
+                                <i className="fas fa-file me-1"></i>
+                                {course.fileName}
+                              </small>
+                            )}
+                            {course.htmlContent && (
+                              <small className="text-success d-block">
+                                <i className="fas fa-image me-1"></i>
+                                Includes images and formatting
+                              </small>
+                            )}
+                          </div>
+                        </div>
+                        <div className="card-footer bg-transparent border-0 pt-0">
+                          <div className="d-grid gap-2">
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => viewCourse(course._id)}
+                            >
+                              <i className="fas fa-eye me-2"></i>View Course
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Questions Tab Content */}
+        {activeTab === 'questions' && (
+          <div className="row">
+            <div className="col-12">
+              {questionsLoading ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <div className="spinner-border text-primary mb-3" style={{width: '3rem', height: '3rem'}}>
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <h4 className="text-primary">Loading Questions...</h4>
+                  </div>
+                </div>
+              ) : questionSets.length === 0 ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <i className="fas fa-question-circle fa-4x text-muted mb-3"></i>
+                    <h3 className="text-muted">No Question Sets Available</h3>
+                    <p className="text-muted">
+                      There are no question sets available at the moment. 
+                      Check back later for new question additions.
+                    </p>
+                    <button className="btn btn-primary" onClick={fetchQuestionSets}>
+                      Refresh Questions
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row">
+                  {questionSets.map((questionSet) => (
+                    <div key={questionSet._id} className="col-lg-6 col-xl-4 mb-4">
+                      <div className="card question-card h-100 shadow-sm border-primary">
+                        <div className="card-header bg-primary text-white">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="badge bg-white text-primary fs-6">
+                              <i className="fas fa-question-circle me-1"></i>
+                              Question Set
+                            </span>
+                            <small>
+                              {formatQuestionSetDate(questionSet)}
+                            </small>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <h5 className="card-title text-dark mb-3">{questionSet.title}</h5>
+                          <p className="card-text text-muted mb-3">
+                            {questionSet.description ? (questionSet.description.length > 120 
+                              ? `${questionSet.description.substring(0, 120)}...` 
+                              : questionSet.description) : 'No description available'
+                            }
+                          </p>
+                          
+                          <div className="question-meta mb-3">
+                            <small className="text-muted d-block">
+                              <i className="fas fa-list-ol me-1"></i>
+                              {questionSet.questions?.length || 0} Questions
+                            </small>
+                            <small className="text-muted d-block">
+                              <i className="fas fa-clock me-1"></i>
+                              15 Minutes Time Limit
+                            </small>
+                            <small className="text-muted d-block">
+                              <i className="fas fa-star me-1"></i>
+                              5 Marks per Question
+                            </small>
+                          </div>
+                        </div>
+                        <div className="card-footer bg-transparent border-0 pt-0">
+                          <div className="d-grid gap-2">
+                            <button
+                              className="btn btn-success btn-lg"
+                              onClick={() => attemptQuestions(questionSet)}
+                            >
+                              <i className="fas fa-play me-2"></i>Attempt Questions
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Course Modal */}
-        {showCourseModal && selectedCourse && (
+        {showCourseModal && (
           <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}}>
             <div className="modal-dialog modal-xl modal-dialog-centered">
               <div className="modal-content">
                 <div className="modal-header bg-primary text-white">
                   <h5 className="modal-title">
                     <i className="fas fa-book me-2"></i>
-                    {selectedCourse.title}
+                    {selectedCourse ? selectedCourse.title : 'Loading Course...'}
                     {contentType === 'html' && (
                       <span className="badge bg-success ms-2">
                         <i className="fas fa-image me-1"></i>
@@ -266,8 +462,14 @@ const GeneralCourses = () => {
                 </div>
                 
                 <div className="modal-body" style={{maxHeight: '80vh', overflowY: 'auto'}}>
-                  
-                  {!documentContent ? (
+                  {!selectedCourse ? (
+                    <div className="text-center py-5">
+                      <div className="spinner-border text-primary mb-3" style={{width: '3rem', height: '3rem'}}>
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <h4>Loading Course...</h4>
+                    </div>
+                  ) : !documentContent ? (
                     // Preview View
                     <div>
                       <div className="row mb-4">
@@ -315,7 +517,7 @@ const GeneralCourses = () => {
                       </div>
                     </div>
                   ) : (
-                    // Document Content View - SUPPORTS HTML AND IMAGES
+                    // Document Content View
                     <div>
                       {documentLoading ? (
                         <div className="text-center py-5">
@@ -347,39 +549,14 @@ const GeneralCourses = () => {
                               maxHeight: '60vh',
                               overflowY: 'auto',
                               wordWrap: 'break-word',
-                              lineHeight: '1.7',
-                              fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-                              fontSize: '16px',
-                              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                              color: '#2c3e50'
+                              lineHeight: '1.7'
                             }}
                           >
                             {contentType === 'html' ? (
-                              <div 
-                                dangerouslySetInnerHTML={{ __html: documentContent }}
-                                style={{
-                                  textAlign: 'left'
-                                }}
-                              />
+                              <div dangerouslySetInnerHTML={{ __html: documentContent }} />
                             ) : (
                               <div style={{ textAlign: 'justify', whiteSpace: 'pre-wrap' }}>
-                                {documentContent.split('\n').map((paragraph, index) => (
-                                  paragraph.trim() ? (
-                                    <div 
-                                      key={index} 
-                                      className="paragraph"
-                                      style={{
-                                        marginBottom: '1.2rem',
-                                        paddingBottom: '0.5rem',
-                                        borderBottom: paragraph.trim().endsWith(':') ? '2px solid #3498db' : 'none'
-                                      }}
-                                    >
-                                      {paragraph}
-                                    </div>
-                                  ) : (
-                                    <br key={index} />
-                                  )
-                                ))}
+                                {documentContent}
                               </div>
                             )}
                           </div>

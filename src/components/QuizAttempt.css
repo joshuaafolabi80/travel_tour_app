@@ -1,0 +1,221 @@
+/* src/components/QuizAttempt.css */
+.quiz-attempt-container {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.quiz-option {
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  padding: 15px 20px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: white;
+}
+
+.quiz-option:hover {
+  border-color: #007bff;
+  background-color: #f8f9fa;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.quiz-option.correct-option {
+  border: 3px solid #28a745 !important;
+  background-color: #d4edda !important;
+  box-shadow: 0 0 15px rgba(40, 167, 69, 0.4);
+  transform: scale(1.02);
+}
+
+.quiz-option.wrong-option {
+  border: 3px solid #dc3545 !important;
+  background-color: #f8d7da !important;
+  box-shadow: 0 0 15px rgba(220, 53, 69, 0.4);
+  transform: scale(1.02);
+}
+
+.option-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.option-letter {
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  background: #007bff;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.option-text {
+  flex: 1;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.question-card {
+  border-radius: 15px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.question-text {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  color: #2c3e50;
+}
+
+.feedback-section {
+  animation: slideInUp 0.5s ease;
+}
+
+.status-card {
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  border-width: 2px !important;
+}
+
+.explanation-box {
+  border-radius: 18px !important;
+  box-shadow: 0 6px 20px rgba(23, 162, 184, 0.15);
+  border: 3px solid #17a2b8 !important;
+  overflow: hidden;
+}
+
+.explanation-box .card-header {
+  border-radius: 15px 15px 0 0 !important;
+  border-bottom: 3px solid #17a2b8;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.explanation-box .card-body {
+  background: linear-gradient(135deg, #f8fdff 0%, #e8f7ff 100%);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.quiz-results-container {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+}
+
+.score-circle {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #28a745, #20c997);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 2rem;
+  box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4);
+  border: 5px solid white;
+}
+
+.results-grid .result-item {
+  padding: 15px;
+}
+
+.results-grid h4 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.navigation-buttons .btn {
+  border-radius: 25px;
+  padding: 12px 30px;
+  font-weight: 600;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+.navigation-buttons .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+}
+
+.progress-bar {
+  border-radius: 5px;
+  transition: width 0.5s ease;
+}
+
+.quiz-info .badge {
+  font-size: 0.9rem;
+  padding: 8px 12px;
+  border-radius: 20px;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+  }
+}
+
+.correct-option {
+  animation: pulse 1s;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .quiz-option {
+    padding: 12px 15px;
+    margin-bottom: 10px;
+  }
+  
+  .option-text {
+    font-size: 0.9rem;
+  }
+  
+  .question-text {
+    font-size: 1.1rem;
+  }
+  
+  .navigation-buttons .btn {
+    padding: 10px 20px;
+    font-size: 0.9rem;
+  }
+  
+  .score-circle {
+    width: 100px;
+    height: 100px;
+    font-size: 1.5rem;
+  }
+}
+
+/* Audio feedback styles */
+.audio-feedback {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  opacity: 0;
+  pointer-events: none;
+}

@@ -1,9 +1,10 @@
-// src/components/MasterclassCourses.jsx - COMPLETE UPDATED VERSION
+// src/components/MasterclassCourses.jsx - FIXED VERSION WITHOUT ROUTER
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
 const MasterclassCourses = ({ navigateTo }) => {
   const [courses, setCourses] = useState([]);
+  const [questionSets, setQuestionSets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedCourse, setSelectedCourse] = useState(null);
@@ -17,6 +18,7 @@ const MasterclassCourses = ({ navigateTo }) => {
   const [contentType, setContentType] = useState('text');
   const [hasAccess, setHasAccess] = useState(false);
   const [accessChecked, setAccessChecked] = useState(false);
+  const [activeTab, setActiveTab] = useState('courses');
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -25,7 +27,10 @@ const MasterclassCourses = ({ navigateTo }) => {
 
   useEffect(() => {
     checkAccessAndFetchCourses();
-  }, [currentPage]);
+    if (hasAccess) {
+      fetchQuestionSets();
+    }
+  }, [currentPage, hasAccess]);
 
   const checkAccessAndFetchCourses = async () => {
     try {
@@ -41,8 +46,7 @@ const MasterclassCourses = ({ navigateTo }) => {
       });
       
       if (response.data.success) {
-        // 🚨 FIXED: Check if user actually has access by looking at the courses array
-        // If courses array is empty AND there's a message about no access, user doesn't have access
+        // Check if user actually has access by looking at the courses array
         if (response.data.courses.length === 0 && 
             response.data.message && 
             response.data.message.includes('No access to masterclass courses')) {
@@ -66,7 +70,7 @@ const MasterclassCourses = ({ navigateTo }) => {
       }
     } catch (error) {
       console.error('Error checking access:', error);
-      // 🚨 FIXED: More specific error handling
+      // More specific error handling
       if (error.response?.status === 403 || 
           error.response?.data?.message?.includes('No access') ||
           (error.response?.data?.courses && error.response.data.courses.length === 0)) {
@@ -87,20 +91,44 @@ const MasterclassCourses = ({ navigateTo }) => {
     }
   };
 
+  const fetchQuestionSets = async () => {
+    try {
+      const response = await api.get('/masterclass-course-questions');
+      
+      if (response.data.success) {
+        setQuestionSets(response.data.questionSets);
+      } else {
+        console.error('Failed to load question sets');
+      }
+    } catch (error) {
+      console.error('Error fetching question sets:', error);
+    }
+  };
+
+  const handleMasterclassQuestionsTab = () => {
+    if (!hasAccess) {
+      requestAccess();
+      return;
+    }
+    console.log('🎯 Navigating to Masterclass Course Questions');
+    if (navigateTo) {
+      navigateTo('masterclass-course-questions');
+    }
+  };
+
   const requestAccess = () => {
     setAccessCode('');
     setValidationError('');
     setShowAccessModal(true);
   };
 
-  // 🚨 FIXED: Contact Admin button function
   const contactAdmin = () => {
     if (navigateTo) {
       navigateTo('contact-us');
     } else {
       console.error('Navigate function not available');
       // Fallback: try to use window location
-      window.location.hash = 'contact-us';
+      window.location.href = `${window.location.origin}/#/contact-us`;
     }
   };
 
@@ -164,6 +192,40 @@ const MasterclassCourses = ({ navigateTo }) => {
     }
   };
 
+  const attemptQuestions = (questionSet) => {
+    if (!hasAccess) {
+      requestAccess();
+      return;
+    }
+    
+    if (!questionSet || !questionSet.questions || questionSet.questions.length === 0) {
+      alert('No questions available in this question set.');
+      return;
+    }
+    
+    console.log('🎯 Attempting masterclass questions:', questionSet.title);
+    console.log('📝 Questions available:', questionSet.questions?.length || 0);
+    
+    // Store question set data for the quiz attempt
+    const questionSetData = {
+      id: questionSet._id,
+      type: 'masterclass',
+      title: questionSet.title,
+      description: questionSet.description,
+      questions: questionSet.questions,
+      courseType: 'masterclass'
+    };
+    
+    localStorage.setItem('currentQuestionSet', JSON.stringify(questionSetData));
+    console.log('💾 Question set stored in localStorage');
+    
+    // 🚨 CRITICAL FIX: Navigate to masterclass-quiz-attempt instead of quiz-platform
+    if (navigateTo) {
+      console.log('📍 Navigating to: masterclass-quiz-attempt');
+      navigateTo('masterclass-quiz-attempt');
+    }
+  };
+
   // READ DOCUMENT CONTENT - WITH IMAGE SUPPORT
   const readDocumentInApp = async () => {
     if (!selectedCourse) return;
@@ -181,8 +243,7 @@ const MasterclassCourses = ({ navigateTo }) => {
         
         if (response.data.contentType === 'html' || response.data.contentType === 'text') {
           setDocumentContent(response.data.content);
-          console.log('📝 Document content loaded:', response.data.contentLength, 'characters');
-          console.log('🖼️ Has images:', response.data.hasImages);
+          console.log('📷 Returning HTML content with embedded images');
         } else if (response.data.contentType === 'error') {
           setDocumentContent('Error: ' + response.data.content);
         } else {
@@ -214,11 +275,12 @@ const MasterclassCourses = ({ navigateTo }) => {
     setValidationError('');
   };
 
-  // 🚨 NEW: Logout function that properly revokes access
+  // Logout function that properly revokes access
   const handleLogout = () => {
     setHasAccess(false);
     localStorage.removeItem('masterclassAccess');
     setCourses([]);
+    setQuestionSets([]);
     setTotalItems(0);
     setCurrentPage(1);
     showCustomAlert('Access revoked. You can enter a new access code anytime.', 'info');
@@ -230,6 +292,12 @@ const MasterclassCourses = ({ navigateTo }) => {
     if (course.createdAt) return new Date(course.createdAt).toLocaleDateString();
     if (course.date) return new Date(course.date).toLocaleDateString();
     if (course.updatedAt) return new Date(course.updatedAt).toLocaleDateString();
+    return 'Date not available';
+  };
+
+  const formatQuestionSetDate = (questionSet) => {
+    if (questionSet.createdAt) return new Date(questionSet.createdAt).toLocaleDateString();
+    if (questionSet.updatedAt) return new Date(questionSet.updatedAt).toLocaleDateString();
     return 'Date not available';
   };
 
@@ -320,7 +388,7 @@ const MasterclassCourses = ({ navigateTo }) => {
     );
   }
 
-  // 🚨 FIXED: Show access request page when user doesn't have access
+  // Show access request page when user doesn't have access
   if (!hasAccess) {
     return (
       <div className="masterclass-courses" style={{ background: '#f8f9fa', minHeight: '100vh' }}>
@@ -508,7 +576,7 @@ const MasterclassCourses = ({ navigateTo }) => {
     );
   }
 
-  // 🚨 FIXED: This is the "Access Granted" view that should only show when user has access
+  // This is the "Access Granted" view that should only show when user has access
   return (
     <div className="masterclass-courses" style={{ background: '#f8f9fa', minHeight: '100vh' }}>
       <div className="container-fluid py-4">
@@ -529,8 +597,8 @@ const MasterclassCourses = ({ navigateTo }) => {
                   </div>
                   <div className="col-md-4 text-md-end">
                     <div className="bg-dark rounded p-3 d-inline-block text-warning">
-                      <h4 className="mb-0 fw-bold">{totalItems}</h4>
-                      <small>Masterclass Courses</small>
+                      <h4 className="mb-0 fw-bold">{totalItems + questionSets.length}</h4>
+                      <small>Masterclass Learning Items</small>
                     </div>
                   </div>
                 </div>
@@ -550,7 +618,7 @@ const MasterclassCourses = ({ navigateTo }) => {
                     Access Granted
                   </h5>
                   <p className="mb-0">
-                    You have access to premium masterclass courses. All documents can be viewed directly in the app with images and formatting preserved.
+                    You have access to premium masterclass courses and question sets. All content can be viewed directly in the app.
                   </p>
                 </div>
                 <div className="col-md-4 text-md-end">
@@ -566,78 +634,188 @@ const MasterclassCourses = ({ navigateTo }) => {
           </div>
         </div>
 
-        {/* Courses Grid */}
-        <div className="row">
+        {/* Tab Navigation */}
+        <div className="row mb-4">
           <div className="col-12">
-            {courses.length === 0 ? (
-              <div className="card shadow-lg border-0">
-                <div className="card-body text-center py-5">
-                  <i className="fas fa-book-open fa-4x text-muted mb-3"></i>
-                  <h3 className="text-muted">No Masterclass Courses Available</h3>
-                  <p className="text-muted">
-                    There are no masterclass courses available at the moment. 
-                    Check back later for new course additions.
-                  </p>
-                </div>
+            <div className="card shadow-sm border-0">
+              <div className="card-body p-0">
+                <ul className="nav nav-tabs nav-justified">
+                  <li className="nav-item">
+                    <button
+                      className={`nav-link ${activeTab === 'courses' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('courses')}
+                    >
+                      <i className="fas fa-crown me-2"></i>Masterclass Courses
+                      <span className="badge bg-warning ms-2">{courses.length}</span>
+                    </button>
+                  </li>
+                  <li className="nav-item">
+                    <button
+                      className={`nav-link ${activeTab === 'questions' ? 'active' : ''}`}
+                      onClick={handleMasterclassQuestionsTab}
+                    >
+                      <i className="fas fa-graduation-cap me-2"></i>Masterclass Questions
+                      <span className="badge bg-info ms-2">{questionSets.length}</span>
+                    </button>
+                  </li>
+                </ul>
               </div>
-            ) : (
-              <div className="row">
-                {courses.map((course) => (
-                  <div key={course._id} className="col-lg-6 col-xl-4 mb-4">
-                    <div className="card course-card h-100 shadow-sm border-warning">
-                      <div className="card-header bg-warning text-dark border-0">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <span className="badge bg-dark fs-6">
-                            <i className="fas fa-crown me-1"></i>
-                            Masterclass
-                          </span>
-                          <i className="fas fa-unlock text-success"></i>
-                        </div>
-                      </div>
-                      <div className="card-body">
-                        <h5 className="card-title text-dark mb-3">{course.title}</h5>
-                        <p className="card-text text-muted mb-3">
-                          {course.description ? (course.description.length > 120 
-                            ? `${course.description.substring(0, 120)}...` 
-                            : course.description) : 'No description available'
-                          }
-                        </p>
-                        
-                        <div className="course-meta mb-3">
-                          {course.fileName && (
-                            <small className="text-muted d-block">
-                              <i className="fas fa-file me-1"></i>
-                              {course.fileName}
-                            </small>
-                          )}
-                          {course.htmlContent && (
-                            <small className="text-success d-block">
-                              <i className="fas fa-image me-1"></i>
-                              Includes images and formatting
-                            </small>
-                          )}
-                        </div>
-                      </div>
-                      <div className="card-footer bg-transparent border-0 pt-0">
-                        <div className="d-grid gap-2">
-                          <button
-                            className="btn btn-warning btn-sm"
-                            onClick={() => viewCourse(course._id)}
-                          >
-                            <i className="fas fa-eye me-2"></i>View Course
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            </div>
           </div>
         </div>
 
+        {/* Courses Tab Content */}
+        {activeTab === 'courses' && (
+          <div className="row">
+            <div className="col-12">
+              {courses.length === 0 ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <i className="fas fa-book-open fa-4x text-muted mb-3"></i>
+                    <h3 className="text-muted">No Masterclass Courses Available</h3>
+                    <p className="text-muted">
+                      There are no masterclass courses available at the moment. 
+                      Check back later for new course additions.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="row">
+                  {courses.map((course) => (
+                    <div key={course._id} className="col-lg-6 col-xl-4 mb-4">
+                      <div className="card course-card h-100 shadow-sm border-warning">
+                        <div className="card-header bg-warning text-dark border-0">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="badge bg-dark fs-6">
+                              <i className="fas fa-crown me-1"></i>
+                              Masterclass
+                            </span>
+                            <i className="fas fa-unlock text-success"></i>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <h5 className="card-title text-dark mb-3">{course.title}</h5>
+                          <p className="card-text text-muted mb-3">
+                            {course.description ? (course.description.length > 120 
+                              ? `${course.description.substring(0, 120)}...` 
+                              : course.description) : 'No description available'
+                            }
+                          </p>
+                          
+                          <div className="course-meta mb-3">
+                            {course.fileName && (
+                              <small className="text-muted d-block">
+                                <i className="fas fa-file me-1"></i>
+                                {course.fileName}
+                              </small>
+                            )}
+                            {course.htmlContent && (
+                              <small className="text-success d-block">
+                                <i className="fas fa-image me-1"></i>
+                                Includes images and formatting
+                              </small>
+                            )}
+                          </div>
+                        </div>
+                        <div className="card-footer bg-transparent border-0 pt-0">
+                          <div className="d-grid gap-2">
+                            <button
+                              className="btn btn-warning btn-sm"
+                              onClick={() => viewCourse(course._id)}
+                            >
+                              <i className="fas fa-eye me-2"></i>View Course
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Questions Tab Content */}
+        {activeTab === 'questions' && (
+          <div className="row">
+            <div className="col-12">
+              {questionSets.length === 0 ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <i className="fas fa-question-circle fa-4x text-muted mb-3"></i>
+                    <h3 className="text-muted">No Question Sets Available</h3>
+                    <p className="text-muted">
+                      There are no masterclass question sets available at the moment. 
+                      Check back later for new question additions.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="row">
+                  {questionSets.map((questionSet) => (
+                    <div key={questionSet._id} className="col-lg-6 col-xl-4 mb-4">
+                      <div className="card question-card h-100 shadow-sm border-warning">
+                        <div className="card-header bg-warning text-dark">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="badge bg-dark text-white fs-6">
+                              <i className="fas fa-crown me-1"></i>
+                              Masterclass
+                            </span>
+                            <small className="text-dark">
+                              {formatQuestionSetDate(questionSet)}
+                            </small>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <h5 className="card-title text-dark mb-3">{questionSet.title}</h5>
+                          <p className="card-text text-muted mb-3">
+                            {questionSet.description ? (questionSet.description.length > 120 
+                              ? `${questionSet.description.substring(0, 120)}...` 
+                              : questionSet.description) : 'No description available'
+                            }
+                          </p>
+                          
+                          <div className="question-meta mb-3">
+                            <small className="text-muted d-block">
+                              <i className="fas fa-list-ol me-1"></i>
+                              {questionSet.questions?.length || 0} Questions
+                            </small>
+                            <small className="text-muted d-block">
+                              <i className="fas fa-clock me-1"></i>
+                              20 Minutes Time Limit
+                            </small>
+                            <small className="text-muted d-block">
+                              <i className="fas fa-star me-1"></i>
+                              10 Marks per Question
+                            </small>
+                            <small className="text-warning d-block">
+                              <i className="fas fa-crown me-1"></i>
+                              Premium Masterclass Content
+                            </small>
+                          </div>
+                        </div>
+                        <div className="card-footer bg-transparent border-0 pt-0">
+                          <div className="d-grid gap-2">
+                            <button
+                              className="btn btn-success btn-lg"
+                              onClick={() => attemptQuestions(questionSet)}
+                            >
+                              <i className="fas fa-play me-2"></i>Attempt Questions
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Pagination */}
-        {totalPages > 1 && (
+        {totalPages > 1 && activeTab === 'courses' && (
           <div className="row mt-4">
             <div className="col-12">
               {renderPagination()}
@@ -822,6 +1000,15 @@ const MasterclassCourses = ({ navigateTo }) => {
         .course-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 4px 15px rgba(255, 193, 7, 0.2) !important;
+        }
+
+        .question-card {
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .question-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 15px rgba(23, 162, 184, 0.2) !important;
         }
         
         .modal-content {

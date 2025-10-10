@@ -1,25 +1,9 @@
-// src/components/QuizPlatform.jsx - FIXED VERSION WITHOUT ROUTER
-import React, { useState, useEffect, useCallback } from 'react';
+// src/components/QuizAttempt.jsx - COMPLETE FIXED VERSION WITH AUDIO FEEDBACK
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/api';
+import './QuizAttempt.css';
 
-// Sound effects
-const playCorrectSound = () => {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance('Correct!');
-    utterance.rate = 1.2;
-    speechSynthesis.speak(utterance);
-  }
-};
-
-const playWrongSound = () => {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance('Wrong!');
-    utterance.rate = 1.2;
-    speechSynthesis.speak(utterance);
-  }
-};
-
-const QuizPlatform = ({ course, onQuizComplete }) => {
+const QuizAttempt = ({ navigateTo }) => {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -39,6 +23,10 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
   const [quizEndTime, setQuizEndTime] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [currentQuestionSet, setCurrentQuestionSet] = useState(null);
+  
+  // Audio references
+  const correctSoundRef = useRef(null);
+  const wrongSoundRef = useRef(null);
 
   // Load question set from localStorage on component mount
   useEffect(() => {
@@ -78,6 +66,35 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
       setError('No question set found. Please go back and select a question set.');
       setLoading(false);
     }
+  }, []);
+
+  // Initialize audio elements
+  useEffect(() => {
+    correctSoundRef.current = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+    wrongSoundRef.current = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+    
+    // Create simple beep sounds
+    const createBeepSound = (frequency, duration) => {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = frequency;
+      oscillator.type = 'sine';
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + duration);
+    };
+
+    // Override play methods with custom beeps
+    correctSoundRef.current.play = () => createBeepSound(800, 0.3);
+    wrongSoundRef.current.play = () => createBeepSound(400, 0.5);
   }, []);
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -127,20 +144,27 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
     setShowFeedback(true);
     setAnswerSubmitted(true);
 
+    // Play sound feedback
     if (isCorrect) {
-      playCorrectSound();
+      if (correctSoundRef.current) {
+        correctSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+      }
       setScore(score + 1);
     } else {
-      playWrongSound();
+      if (wrongSoundRef.current) {
+        wrongSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
+      }
     }
 
     const newAnswer = {
       questionId: currentQuestion.id,
       question: currentQuestion.question,
+      selectedOption: optionIndex,
       selectedAnswer: optionIndex,
       correctAnswer: currentQuestion.correctAnswer,
       isCorrect: isCorrect,
-      explanation: currentQuestion.explanation
+      explanation: currentQuestion.explanation,
+      options: currentQuestion.options
     };
     
     setAnswers(prev => [...prev, newAnswer]);
@@ -166,7 +190,7 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
       
       const prevAnswer = answers[currentQuestionIndex - 1];
       if (prevAnswer) {
-        setSelectedOption(prevAnswer.selectedAnswer);
+        setSelectedOption(prevAnswer.selectedOption);
         setShowFeedback(true);
         setAnswerSubmitted(true);
       } else {
@@ -187,9 +211,9 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
     if (!showFeedback) return "quiz-option";
     
     if (optionIndex === currentQuestion.correctAnswer) {
-      return "quiz-option correct";
+      return "quiz-option correct-option";
     } else if (optionIndex === selectedOption && optionIndex !== currentQuestion.correctAnswer) {
-      return "quiz-option incorrect";
+      return "quiz-option wrong-option";
     }
     return "quiz-option";
   };
@@ -227,25 +251,39 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
         return "Needs Improvement";
       };
 
-      // Determine course info based on source
-      const courseName = currentQuestionSet?.title || course?.name || 'General Quiz';
-      const courseType = currentQuestionSet?.type || 'general';
+      const courseName = currentQuestionSet?.title || 'Course Questions';
+      const finalRemark = getRemark(percentage);
+
+      // Format answers to match server schema
+      const formattedAnswers = answers.map((answer, index) => ({
+        questionId: answer.questionId,
+        question: answer.question,
+        selectedOption: answer.selectedOption,
+        correctAnswer: answer.correctAnswer,
+        isCorrect: answer.isCorrect,
+        explanation: answer.explanation,
+        options: answer.options
+      }));
 
       const quizData = {
-        answers: answers,
+        answers: formattedAnswers,
         userId: userId,
         userName: userName.trim(),
-        courseId: currentQuestionSet?.id || course?._id,
+        courseId: currentQuestionSet?.id,
         courseName: courseName,
+        courseType: currentQuestionSet?.type || 'general',
         destination: courseName,
         score: finalScore,
         totalQuestions: questions.length,
         percentage: percentage,
         timeTaken: timeTaken,
-        remark: getRemark(percentage),
+        remark: finalRemark,
         status: "completed",
         date: new Date().toISOString(),
-        submittedAt: new Date().toISOString()
+        submittedAt: new Date().toISOString(),
+        questionSetId: currentQuestionSet?.id,
+        questionSetTitle: currentQuestionSet?.title,
+        questionSetType: currentQuestionSet?.type
       };
 
       console.log('📤 Submitting quiz data:', quizData);
@@ -260,12 +298,12 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
         // Clear stored question set
         localStorage.removeItem('currentQuestionSet');
         
-        // Navigate properly using onQuizComplete prop
+        // Navigate to quiz scores using navigateTo prop
         setTimeout(() => {
-          if (onQuizComplete) {
-            onQuizComplete();
+          if (navigateTo) {
+            navigateTo('quiz-scores');
           }
-        }, 1000);
+        }, 2000);
       } else {
         alert('Error submitting quiz results: ' + (response.data.message || 'Unknown error'));
         setSubmitting(false);
@@ -275,29 +313,30 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
       console.error('Error details:', error.response?.data || error.message);
       setSubmitting(false);
       
-      alert('Error submitting quiz. Please check console for details.');
+      if (error.response?.data?.message) {
+        alert('Error submitting quiz: ' + error.response.data.message);
+      } else {
+        alert('Error submitting quiz. Please check console for details.');
+      }
     }
   };
 
   // Loading state
   if (loading) {
     return (
-      <div className="quiz-platform" style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        minHeight: '100vh',
-        padding: '2rem 0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div className="container">
+      <div className="quiz-attempt-container">
+        <div className="container-fluid py-4">
           <div className="row justify-content-center">
-            <div className="col-12 col-lg-8 text-center text-white">
-              <div className="spinner-border mb-3" style={{width: '3rem', height: '3rem'}}>
-                <span className="visually-hidden">Loading...</span>
+            <div className="col-12 col-md-8 col-lg-6">
+              <div className="card shadow-lg border-0">
+                <div className="card-body text-center py-5">
+                  <div className="spinner-border text-primary mb-3" style={{width: '3rem', height: '3rem'}}>
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <h4 className="text-primary">Loading Quiz...</h4>
+                  <p>Please wait while we prepare your questions</p>
+                </div>
               </div>
-              <h3>Loading Quiz...</h3>
-              <p>Please wait while we prepare your questions</p>
             </div>
           </div>
         </div>
@@ -308,17 +347,10 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
   // Error state
   if (error) {
     return (
-      <div className="quiz-platform" style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        minHeight: '100vh',
-        padding: '2rem 0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div className="container">
+      <div className="quiz-attempt-container">
+        <div className="container-fluid py-4">
           <div className="row justify-content-center">
-            <div className="col-12 col-lg-8">
+            <div className="col-12 col-md-8 col-lg-6">
               <div className="card shadow-lg border-0">
                 <div className="card-body text-center p-5">
                   <i className="fas fa-exclamation-triangle fa-4x text-danger mb-3"></i>
@@ -326,7 +358,7 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                   <p className="text-muted mb-4">{error}</p>
                   <button 
                     className="btn btn-primary"
-                    onClick={() => window.history.back()}
+                    onClick={() => navigateTo ? navigateTo('general-courses') : window.history.back()}
                   >
                     <i className="fas fa-arrow-left me-2"></i>
                     Go Back
@@ -343,17 +375,10 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
   // No questions state
   if (questions.length === 0) {
     return (
-      <div className="quiz-platform" style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        minHeight: '100vh',
-        padding: '2rem 0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div className="container">
+      <div className="quiz-attempt-container">
+        <div className="container-fluid py-4">
           <div className="row justify-content-center">
-            <div className="col-12 col-lg-8">
+            <div className="col-12 col-md-8 col-lg-6">
               <div className="card shadow-lg border-0">
                 <div className="card-body text-center p-5">
                   <i className="fas fa-clipboard-question fa-4x text-warning mb-3"></i>
@@ -364,7 +389,7 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                   </p>
                   <button 
                     className="btn btn-outline-primary"
-                    onClick={() => window.history.back()}
+                    onClick={() => navigateTo ? navigateTo('general-courses') : window.history.back()}
                   >
                     <i className="fas fa-arrow-left me-2"></i>
                     Go Back
@@ -384,27 +409,20 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
     const timeTaken = calculateTimeTaken();
     
     return (
-      <div className="quiz-results-container" style={{
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        minHeight: '100vh',
-        padding: '2rem 0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div className="container">
+      <div className="quiz-results-container">
+        <div className="container-fluid py-4">
           <div className="row justify-content-center">
             <div className="col-md-8 col-lg-6">
               
               {showSuccessMessage && (
-                <div className="alert alert-success alert-dismissible fade show mb-4" role="alert" style={{ borderRadius: '10px' }}>
+                <div className="alert alert-success alert-dismissible fade show mb-4" role="alert">
                   <i className="fas fa-check-circle me-2"></i>
                   <strong>Success!</strong> Quiz submitted successfully! Redirecting to scores page...
                 </div>
               )}
               
-              <div className="card shadow-lg border-0" style={{ borderRadius: '20px' }}>
-                <div className="card-header bg-primary text-white text-center py-4" style={{ borderTopLeftRadius: '20px', borderTopRightRadius: '20px' }}>
+              <div className="card shadow-lg border-0">
+                <div className="card-header bg-primary text-white text-center py-4">
                   <h2 className="mb-0">
                     <i className="fas fa-trophy me-2"></i>
                     Quiz Completed!
@@ -413,33 +431,12 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                 </div>
                 
                 <div className="card-body p-5 text-center">
-                  <div className="score-circle mx-auto mb-4" style={{
-                    width: '120px',
-                    height: '120px',
-                    borderRadius: '50%',
-                    background: `conic-gradient(#28a745 ${percentage}%, #e9ecef ${percentage}%)`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '2rem',
-                    fontWeight: 'bold',
-                    color: '#28a745'
-                  }}>
-                    <div style={{
-                      width: '100px',
-                      height: '100px',
-                      borderRadius: '50%',
-                      background: 'white',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      {percentage}%
-                    </div>
+                  <div className="score-circle mx-auto mb-4">
+                    <div className="score-percentage">{percentage}%</div>
                   </div>
 
                   <h3 className="text-primary mb-3">
-                    {currentQuestionSet?.title || course?.name || 'Quiz'} Results
+                    {currentQuestionSet?.title || 'Course Questions'} Results
                   </h3>
                   
                   <div className="results-grid mb-4">
@@ -487,7 +484,6 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                       value={userName}
                       onChange={(e) => setUserName(e.target.value)}
                       placeholder="Your full name"
-                      style={{ borderRadius: '10px' }}
                     />
                   </div>
 
@@ -495,7 +491,6 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                     className="btn btn-success btn-lg w-100 py-3"
                     onClick={handleSubmitQuiz}
                     disabled={!userName.trim() || submitting}
-                    style={{ borderRadius: '12px', fontSize: '1.1rem' }}
                   >
                     {submitting ? (
                       <>
@@ -520,12 +515,8 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
 
   // Main Quiz Interface
   return (
-    <div className="quiz-platform" style={{
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      minHeight: '100vh',
-      padding: '2rem 0'
-    }}>
-      <div className="container">
+    <div className="quiz-attempt-container">
+      <div className="container-fluid py-4">
         <div className="row justify-content-center">
           <div className="col-12 col-lg-10">
             <div className="card shadow-lg border-0">
@@ -535,7 +526,7 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                   <div className="col-md-6">
                     <h2 className="mb-0">
                       <i className="fas fa-brain me-2"></i>
-                      {currentQuestionSet?.title || course?.name || 'Quiz'}
+                      {currentQuestionSet?.title || 'Course Questions'}
                     </h2>
                     <p className="mb-0 opacity-75">Test your knowledge and earn your certificate</p>
                   </div>
@@ -605,25 +596,55 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                     </div>
                   </div>
 
-                  {/* Feedback Section */}
+                  {/* Enhanced Feedback Section with Explanation Box */}
                   {showFeedback && (
-                    <div className={`feedback-card card border-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} mb-4`}>
-                      <div className="card-body">
-                        <div className="d-flex align-items-center">
-                          <i className={`fas fa-${selectedOption === currentQuestion.correctAnswer ? 'check' : 'times'} fa-2x text-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} me-3`}></i>
-                          <div>
-                            <h5 className={`text-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} mb-1`}>
-                              {selectedOption === currentQuestion.correctAnswer ? 'Correct! Well done!' : 'Incorrect!'}
-                            </h5>
-                            <p className="mb-0 text-muted">
-                              {currentQuestion.explanation || 
-                                (selectedOption === currentQuestion.correctAnswer 
+                    <div className="feedback-section">
+                      {/* Status Card */}
+                      <div className={`status-card card border-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} mb-3`}>
+                        <div className="card-body">
+                          <div className="d-flex align-items-center">
+                            <i className={`fas fa-${selectedOption === currentQuestion.correctAnswer ? 'check' : 'times'} fa-2x text-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} me-3`}></i>
+                            <div>
+                              <h5 className={`text-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} mb-1`}>
+                                {selectedOption === currentQuestion.correctAnswer ? 'Correct! Well done! 🎉' : 'Incorrect! ❌'}
+                              </h5>
+                              <p className="mb-0 text-muted">
+                                {selectedOption === currentQuestion.correctAnswer 
                                   ? 'You selected the right answer.' 
-                                  : `The correct answer is: ${currentQuestion.options[currentQuestion.correctAnswer]}`)}
-                            </p>
+                                  : `You selected: "${currentQuestion.options[selectedOption]}"`}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
+
+                      {/* Explanation Box with Curved Edges */}
+                      {(currentQuestion.explanation || selectedOption !== currentQuestion.correctAnswer) && (
+                        <div className="explanation-box card border-info mb-4">
+                          <div className="card-header bg-info text-white">
+                            <h6 className="mb-0">
+                              <i className="fas fa-lightbulb me-2"></i>
+                              Explanation & Learning Point
+                            </h6>
+                          </div>
+                          <div className="card-body">
+                            {currentQuestion.explanation ? (
+                              <p className="mb-0 text-dark">{currentQuestion.explanation}</p>
+                            ) : (
+                              <div>
+                                <p className="mb-2 text-dark">
+                                  <strong>Correct Answer:</strong> "{currentQuestion.options[currentQuestion.correctAnswer]}"
+                                </p>
+                                {selectedOption !== currentQuestion.correctAnswer && (
+                                  <p className="mb-0 text-muted">
+                                    Remember this for next time! The correct option is highlighted in green above.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -654,45 +675,6 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
                       )}
                     </button>
                   </div>
-
-                  {/* Quiz Tips */}
-                  <div className="quiz-tips card border-info">
-                    <div className="card-body py-2">
-                      <small className="text-info">
-                        <i className="fas fa-lightbulb me-2"></i>
-                        {!answerSubmitted 
-                          ? 'Tip: Read each question carefully before selecting your answer.' 
-                          : 'Review your answer before proceeding to the next question.'}
-                        {timeLeft < 300 && (
-                          <span className="ms-2 text-warning">
-                            <i className="fas fa-exclamation-triangle me-1"></i>
-                            Time is running out!
-                          </span>
-                        )}
-                      </small>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quiz Footer */}
-              <div className="card-footer bg-light py-3">
-                <div className="row align-items-center">
-                  <div className="col-md-6">
-                    <small className="text-muted">
-                      <i className="fas fa-clock me-1"></i>
-                      Time: {formatTime(timeLeft)} | Questions: {questions.length} | Answered: {answers.length}
-                    </small>
-                  </div>
-                  <div className="col-md-6 text-md-end">
-                    <button 
-                      className="btn btn-outline-danger btn-sm"
-                      onClick={handleAutoSubmit}
-                    >
-                      <i className="fas fa-stopwatch me-1"></i>
-                      Submit Now
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -700,94 +682,69 @@ const QuizPlatform = ({ course, onQuizComplete }) => {
         </div>
       </div>
 
+      {/* Hidden audio elements for fallback */}
+      <audio ref={correctSoundRef} preload="auto">
+        <source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav" />
+      </audio>
+      <audio ref={wrongSoundRef} preload="auto">
+        <source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav" />
+      </audio>
+
       <style jsx>{`
         .quiz-option {
-          padding: 1rem 1.5rem;
-          margin-bottom: 0.75rem;
           border: 2px solid #e9ecef;
-          border-radius: 10px;
-          cursor: pointer;
           transition: all 0.3s ease;
-          background: white;
-          display: flex;
-          align-items: center;
-          justify-content: between;
         }
-
-        .quiz-option:hover:not(.correct):not(.incorrect) {
-          border-color: #3B71CA;
+        
+        .quiz-option:hover:not(.correct-option):not(.wrong-option) {
+          border-color: #007bff;
           background-color: #f8f9fa;
-          transform: translateX(5px);
         }
-
-        .quiz-option.correct {
-          border-color: #28a745;
-          background-color: #d4edda;
-          color: #155724;
-          cursor: default;
+        
+        .correct-option {
+          border: 3px solid #28a745 !important;
+          background-color: #d4edda !important;
+          box-shadow: 0 0 10px rgba(40, 167, 69, 0.3);
         }
-
-        .quiz-option.incorrect {
-          border-color: #dc3545;
-          background-color: #f8d7da;
-          color: #721c24;
-          cursor: default;
+        
+        .wrong-option {
+          border: 3px solid #dc3545 !important;
+          background-color: #f8d7da !important;
+          box-shadow: 0 0 10px rgba(220, 53, 69, 0.3);
         }
-
-        .quiz-option:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
+        
+        .explanation-box {
+          border-radius: 15px !important;
+          box-shadow: 0 4px 15px rgba(0, 123, 255, 0.1);
+          border: 2px solid #17a2b8 !important;
         }
-
-        .option-letter {
-          display: inline-flex;
+        
+        .explanation-box .card-header {
+          border-radius: 13px 13px 0 0 !important;
+          border-bottom: 2px solid #17a2b8;
+        }
+        
+        .status-card {
+          border-radius: 10px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .score-circle {
+          width: 120px;
+          height: 120px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #007bff, #0056b3);
+          display: flex;
           align-items: center;
           justify-content: center;
-          width: 30px;
-          height: 30px;
-          background: #3B71CA;
           color: white;
-          border-radius: 50%;
           font-weight: bold;
-        }
-
-        .option-content {
-          display: flex;
-          align-items: center;
-          flex-grow: 1;
-        }
-
-        .option-text {
-          flex-grow: 1;
-        }
-
-        .question-text {
-          line-height: 1.6;
-        }
-
-        .feedback-card {
-          animation: slideIn 0.5s ease;
-        }
-
-        @keyframes slideIn {
-          from { transform: translateY(-10px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-
-        .timer-warning {
-          animation: pulse 1s infinite;
-        }
-
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.05); }
-          100% { transform: scale(1); }
+          font-size: 1.5rem;
+          box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
         }
       `}</style>
     </div>
   );
 };
 
-// 🚨 ADDED: Named export for compatibility
-export { QuizPlatform };
-export default QuizPlatform;
+export default QuizAttempt;

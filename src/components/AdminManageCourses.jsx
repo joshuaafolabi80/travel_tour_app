@@ -1,4 +1,4 @@
-// src/components/AdminManageCourses.jsx
+// src/components/AdminManageCourses.jsx - COMPLETE UPDATED VERSION WITH QUESTION UPLOAD FEATURES
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
@@ -47,6 +47,24 @@ const AdminManageCourses = () => {
   // Access code state
   const [generatedAccessCode, setGeneratedAccessCode] = useState('');
   const [accessCodes, setAccessCodes] = useState([]);
+
+  // Question upload states
+  const [showGeneralQuestionsModal, setShowGeneralQuestionsModal] = useState(false);
+  const [showMasterclassQuestionsModal, setShowMasterclassQuestionsModal] = useState(false);
+  const [uploadingQuestions, setUploadingQuestions] = useState(false);
+  
+  // Question form state
+  const [questionForm, setQuestionForm] = useState({
+    title: '',
+    description: '',
+    courseType: 'general',
+    questions: Array(20).fill().map(() => ({
+      question: '',
+      options: ['', '', '', ''],
+      correctOption: 2, // Default to option C (index 2)
+      explanation: ''
+    }))
+  });
 
   // Effects
   useEffect(() => {
@@ -286,6 +304,138 @@ const AdminManageCourses = () => {
     await fetchAccessCodes();
   };
 
+  // Question upload functions
+  const openGeneralQuestionsModal = () => {
+    setQuestionForm({
+      title: '',
+      description: '',
+      courseType: 'general',
+      questions: Array(20).fill().map(() => ({
+        question: '',
+        options: ['', '', '', ''],
+        correctOption: Math.floor(Math.random() * 4), // Random correct option
+        explanation: ''
+      }))
+    });
+    setShowGeneralQuestionsModal(true);
+  };
+
+  const openMasterclassQuestionsModal = () => {
+    setQuestionForm({
+      title: '',
+      description: '',
+      courseType: 'masterclass',
+      questions: Array(20).fill().map(() => ({
+        question: '',
+        options: ['', '', '', ''],
+        correctOption: Math.floor(Math.random() * 4), // Random correct option
+        explanation: ''
+      }))
+    });
+    setShowMasterclassQuestionsModal(true);
+  };
+
+  const handleQuestionChange = (questionIndex, field, value) => {
+    const updatedQuestions = [...questionForm.questions];
+    updatedQuestions[questionIndex] = {
+      ...updatedQuestions[questionIndex],
+      [field]: value
+    };
+    setQuestionForm({
+      ...questionForm,
+      questions: updatedQuestions
+    });
+  };
+
+  const handleOptionChange = (questionIndex, optionIndex, value) => {
+    const updatedQuestions = [...questionForm.questions];
+    updatedQuestions[questionIndex].options[optionIndex] = value;
+    setQuestionForm({
+      ...questionForm,
+      questions: updatedQuestions
+    });
+  };
+
+  const handleCorrectOptionChange = (questionIndex, optionIndex) => {
+    const updatedQuestions = [...questionForm.questions];
+    updatedQuestions[questionIndex].correctOption = optionIndex;
+    setQuestionForm({
+      ...questionForm,
+      questions: updatedQuestions
+    });
+  };
+
+  const uploadQuestions = async () => {
+    if (!questionForm.title.trim() || !questionForm.description.trim()) {
+      showCustomAlert('Please fill all required fields', 'error');
+      return;
+    }
+
+    // Validate all questions
+    for (let i = 0; i < questionForm.questions.length; i++) {
+      const q = questionForm.questions[i];
+      if (!q.question.trim()) {
+        showCustomAlert(`Please fill question ${i + 1}`, 'error');
+        return;
+      }
+      for (let j = 0; j < q.options.length; j++) {
+        if (!q.options[j].trim()) {
+          showCustomAlert(`Please fill all options for question ${i + 1}`, 'error');
+          return;
+        }
+      }
+      if (!q.explanation.trim()) {
+        showCustomAlert(`Please provide explanation for question ${i + 1}`, 'error');
+        return;
+      }
+    }
+
+    setUploadingQuestions(true);
+
+    try {
+      const questionsData = questionForm.questions.map((q, index) => ({
+        questionNumber: index + 1,
+        question: q.question,
+        options: q.options,
+        correctAnswer: q.options[q.correctOption],
+        correctOption: q.correctOption,
+        explanation: q.explanation
+      }));
+
+      const payload = {
+        title: questionForm.title,
+        description: questionForm.description,
+        courseType: questionForm.courseType,
+        questions: questionsData,
+        totalQuestions: 20,
+        marksPerQuestion: 5,
+        timeLimit: 15 // 15 minutes
+      };
+
+      const endpoint = questionForm.courseType === 'general' 
+        ? '/admin/upload-general-questions'
+        : '/admin/upload-masterclass-questions';
+
+      const response = await api.post(endpoint, payload);
+
+      if (response.data.success) {
+        showCustomAlert(`${questionForm.courseType === 'general' ? 'General' : 'Masterclass'} questions uploaded successfully!`, 'success');
+        if (questionForm.courseType === 'general') {
+          setShowGeneralQuestionsModal(false);
+        } else {
+          setShowMasterclassQuestionsModal(false);
+        }
+      } else {
+        showCustomAlert('Failed to upload questions. Please try again.', 'error');
+      }
+    } catch (error) {
+      console.error('Error uploading questions:', error);
+      showCustomAlert('Failed to upload questions. Please try again.', 'error');
+    } finally {
+      setUploadingQuestions(false);
+    }
+  };
+
   // Pagination functions
   const totalPages = Math.ceil(totalItems / itemsPerPage);
 
@@ -408,6 +558,71 @@ const AdminManageCourses = () => {
     );
   }
 
+  // Render question input for a specific question index
+  const renderQuestionInput = (questionIndex) => {
+    const question = questionForm.questions[questionIndex];
+    const optionLetters = ['A', 'B', 'C', 'D'];
+    
+    return (
+      <div key={questionIndex} className="question-card card mb-4">
+        <div className="card-header bg-light">
+          <h6 className="mb-0">Question {questionIndex + 1}</h6>
+        </div>
+        <div className="card-body">
+          <div className="mb-3">
+            <label className="form-label fw-bold">Question Text</label>
+            <textarea
+              className="form-control"
+              rows="3"
+              placeholder={`Enter question ${questionIndex + 1}...`}
+              value={question.question}
+              onChange={(e) => handleQuestionChange(questionIndex, 'question', e.target.value)}
+            />
+          </div>
+          
+          <div className="mb-3">
+            <label className="form-label fw-bold">Options</label>
+            {question.options.map((option, optionIndex) => (
+              <div key={optionIndex} className="input-group mb-2">
+                <span className="input-group-text" style={{width: '40px'}}>
+                  {optionLetters[optionIndex]}
+                </span>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder={`Option ${optionLetters[optionIndex]}...`}
+                  value={option}
+                  onChange={(e) => handleOptionChange(questionIndex, optionIndex, e.target.value)}
+                />
+                <div className="input-group-text">
+                  <input
+                    type="radio"
+                    className="form-check-input"
+                    name={`correct-option-${questionIndex}`}
+                    checked={question.correctOption === optionIndex}
+                    onChange={() => handleCorrectOptionChange(questionIndex, optionIndex)}
+                  />
+                  <label className="form-check-label ms-2">Correct</label>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="mb-3">
+            <label className="form-label fw-bold">Correct Option Explanation</label>
+            <textarea
+              className="form-control"
+              rows="2"
+              placeholder="Explain why the correct option is right..."
+              value={question.explanation}
+              onChange={(e) => handleQuestionChange(questionIndex, 'explanation', e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="admin-manage-courses" style={{ background: '#f9fafb', minHeight: '100vh' }}>
       {/* Custom Alert Component */}
@@ -476,6 +691,22 @@ const AdminManageCourses = () => {
                       onClick={() => setActiveTab('upload-masterclass')}
                     >
                       <i className="fas fa-crown me-2"></i>Upload Masterclass Courses
+                    </button>
+                  </li>
+                  <li className="nav-item" role="presentation">
+                    <button
+                      className={`nav-link ${activeTab === 'general-questions' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('general-questions')}
+                    >
+                      <i className="fas fa-question-circle me-2"></i>General Course Questions
+                    </button>
+                  </li>
+                  <li className="nav-item" role="presentation">
+                    <button
+                      className={`nav-link ${activeTab === 'masterclass-questions' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('masterclass-questions')}
+                    >
+                      <i className="fas fa-graduation-cap me-2"></i>Masterclass Course Questions
                     </button>
                   </li>
                   <li className="nav-item" role="presentation">
@@ -638,6 +869,94 @@ const AdminManageCourses = () => {
                   </div>
                 )}
 
+                {/* General Course Questions Tab */}
+                {activeTab === 'general-questions' && (
+                  <div className="questions-section">
+                    <h4 className="mb-4" style={{color: '#0c5460'}}>
+                      <i className="fas fa-question-circle me-2"></i>
+                      Upload General Course Questions
+                    </h4>
+                    <div className="row">
+                      <div className="col-md-8">
+                        <div className="alert alert-info">
+                          <h6><i className="fas fa-info-circle me-2"></i>General Course Questions Information</h6>
+                          <ul className="mb-0">
+                            <li>Create 20 questions for general courses</li>
+                            <li>Each question has 4 options (A, B, C, D)</li>
+                            <li>Mark the correct option for each question</li>
+                            <li>Provide explanations for correct answers</li>
+                            <li>Questions will be available to all users</li>
+                          </ul>
+                        </div>
+                        <button
+                          className="btn btn-info btn-lg"
+                          onClick={openGeneralQuestionsModal}
+                        >
+                          <i className="fas fa-plus-circle me-2"></i>Create General Course Questions
+                        </button>
+                      </div>
+                      <div className="col-md-4">
+                        <div className="card bg-light">
+                          <div className="card-body">
+                            <h6>Quick Tips</h6>
+                            <ul className="small">
+                              <li>Ensure question titles relate to specific courses</li>
+                              <li>Make descriptions clear and informative</li>
+                              <li>Rotate correct options randomly</li>
+                              <li>Provide meaningful explanations</li>
+                              <li>Test questions before publishing</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Masterclass Course Questions Tab */}
+                {activeTab === 'masterclass-questions' && (
+                  <div className="questions-section">
+                    <h4 className="mb-4" style={{color: '#0c5460'}}>
+                      <i className="fas fa-graduation-cap me-2"></i>
+                      Upload Masterclass Course Questions
+                    </h4>
+                    <div className="row">
+                      <div className="col-md-8">
+                        <div className="alert alert-warning">
+                          <h6><i className="fas fa-exclamation-triangle me-2"></i>Masterclass Course Questions Information</h6>
+                          <ul className="mb-0">
+                            <li>Create 20 questions for masterclass courses</li>
+                            <li>Each question has 4 options (A, B, C, D)</li>
+                            <li>Mark the correct option for each question</li>
+                            <li>Provide detailed explanations for correct answers</li>
+                            <li>Questions will require access codes</li>
+                          </ul>
+                        </div>
+                        <button
+                          className="btn btn-warning btn-lg"
+                          onClick={openMasterclassQuestionsModal}
+                        >
+                          <i className="fas fa-plus-circle me-2"></i>Create Masterclass Course Questions
+                        </button>
+                      </div>
+                      <div className="col-md-4">
+                        <div className="card bg-light">
+                          <div className="card-body">
+                            <h6>Advanced Tips</h6>
+                            <ul className="small">
+                              <li>Create challenging questions for premium users</li>
+                              <li>Focus on practical application of knowledge</li>
+                              <li>Include real-world scenarios</li>
+                              <li>Provide comprehensive explanations</li>
+                              <li>Ensure questions match course difficulty</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* View/Edit/Delete Courses Tab */}
                 {activeTab === 'view-courses' && (
                   <div className="view-courses-section">
@@ -764,7 +1083,7 @@ const AdminManageCourses = () => {
                                       className="btn btn-outline-danger"
                                       onClick={() => openDeleteModal(course)}
                                       title="Delete Course"
-                                    >
+                                      >
                                       <i className="fas fa-trash"></i>
                                     </button>
                                   </div>
@@ -1082,6 +1401,172 @@ const AdminManageCourses = () => {
         </div>
       )}
 
+      {/* General Questions Upload Modal */}
+      {showGeneralQuestionsModal && (
+        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}}>
+          <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content">
+              <div className="modal-header bg-info text-white">
+                <h5 className="modal-title">
+                  <i className="fas fa-question-circle me-2"></i>
+                  Upload General Course Questions
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => setShowGeneralQuestionsModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="row mb-4">
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label className="form-label fw-bold">Question Set Title</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g., TCA 001 Questions"
+                        value={questionForm.title}
+                        onChange={(e) => setQuestionForm({...questionForm, title: e.target.value})}
+                      />
+                      <small className="text-muted">Ensure the title relates to the specific course</small>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label className="form-label fw-bold">Description</label>
+                      <textarea
+                        className="form-control"
+                        rows="2"
+                        placeholder="Describe this question set..."
+                        value={questionForm.description}
+                        onChange={(e) => setQuestionForm({...questionForm, description: e.target.value})}
+                      />
+                      <small className="text-muted">Provide context about these questions</small>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="questions-container">
+                  {questionForm.questions.map((_, index) => renderQuestionInput(index))}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowGeneralQuestionsModal(false)}
+                  disabled={uploadingQuestions}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-info"
+                  onClick={uploadQuestions}
+                  disabled={uploadingQuestions}
+                >
+                  {uploadingQuestions ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                      Uploading Questions...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-upload me-2"></i>
+                      Upload 20 Questions
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Masterclass Questions Upload Modal */}
+      {showMasterclassQuestionsModal && (
+        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}}>
+          <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div className="modal-content">
+              <div className="modal-header bg-warning text-dark">
+                <h5 className="modal-title">
+                  <i className="fas fa-graduation-cap me-2"></i>
+                  Upload Masterclass Course Questions
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowMasterclassQuestionsModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                <div className="row mb-4">
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label className="form-label fw-bold">Question Set Title</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g., TCA Masterclass 001 Questions"
+                        value={questionForm.title}
+                        onChange={(e) => setQuestionForm({...questionForm, title: e.target.value})}
+                      />
+                      <small className="text-muted">Ensure the title relates to the specific masterclass course</small>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label className="form-label fw-bold">Description</label>
+                      <textarea
+                        className="form-control"
+                        rows="2"
+                        placeholder="Describe this masterclass question set..."
+                        value={questionForm.description}
+                        onChange={(e) => setQuestionForm({...questionForm, description: e.target.value})}
+                      />
+                      <small className="text-muted">Provide context about these advanced questions</small>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="questions-container">
+                  {questionForm.questions.map((_, index) => renderQuestionInput(index))}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowMasterclassQuestionsModal(false)}
+                  disabled={uploadingQuestions}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-warning"
+                  onClick={uploadQuestions}
+                  disabled={uploadingQuestions}
+                >
+                  {uploadingQuestions ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                      Uploading Questions...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-upload me-2"></i>
+                      Upload 20 Questions
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom CSS */}
       <style jsx>{`
         .custom-alert {
@@ -1153,6 +1638,30 @@ const AdminManageCourses = () => {
         
         .btn-group-sm > .btn {
           padding: 0.25rem 0.5rem;
+        }
+
+        .question-card {
+          border-left: 4px solid #17a2b8;
+        }
+
+        .questions-container {
+          max-height: 60vh;
+          overflow-y: auto;
+          padding-right: 10px;
+        }
+
+        .questions-container::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .questions-container::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 3px;
+        }
+
+        .questions-container::-webkit-scrollbar-thumb {
+          background: #17a2b8;
+          border-radius: 3px;
         }
       `}</style>
     </div>

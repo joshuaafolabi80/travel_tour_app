@@ -1,759 +1,958 @@
-// src/components/MessageFromStudents.jsx - ENHANCED VERSION WITH GROUPING & PAGINATION
+// src/components/MasterclassCourses.jsx - COMPLETE WORKING VERSION
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
-const MessageFromStudents = () => {
-  const [messages, setMessages] = useState([]);
+const MasterclassCourses = ({ navigateTo }) => {
+  const [courses, setCourses] = useState([]);
+  const [questionSets, setQuestionSets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMessage, setSelectedMessage] = useState(null);
-  const [showMessageModal, setShowMessageModal] = useState(false);
-  const [replying, setReplying] = useState(false);
-  const [replyText, setReplyText] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [alert, setAlert] = useState({ show: false, type: '', message: '' });
+  const [error, setError] = useState('');
+  const [selectedCourse, setSelectedCourse] = useState(null);
+  const [showCourseModal, setShowCourseModal] = useState(false);
+  const [showAccessModal, setShowAccessModal] = useState(false);
+  const [accessCode, setAccessCode] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [documentContent, setDocumentContent] = useState(null);
+  const [contentType, setContentType] = useState('text');
+  const [hasAccess, setHasAccess] = useState(false);
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [activeTab, setActiveTab] = useState('courses');
   
-  // NEW: State for grouped messages and expanded groups
-  const [groupedMessages, setGroupedMessages] = useState({});
-  const [expandedGroups, setExpandedGroups] = useState(new Set());
+  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [studentsPerPage] = useState(10);
-
-  // Show custom alert
-  const showAlert = (message, type = 'success') => {
-    setAlert({ show: true, type, message });
-    setTimeout(() => {
-      setAlert({ show: false, type: '', message: '' });
-    }, 4000);
-  };
+  const [itemsPerPage] = useState(10);
+  const [totalItems, setTotalItems] = useState(0);
 
   useEffect(() => {
-    fetchMessages();
-  }, [filter]);
+    checkAccessAndFetchCourses();
+    if (hasAccess) {
+      fetchQuestionSets();
+    }
+  }, [currentPage, hasAccess]);
 
-  // NEW: Function to group messages by student email
-  const groupMessagesByStudent = (messages) => {
-    const grouped = {};
-    
-    messages.forEach(message => {
-      const studentEmail = message.fromStudent?.email || 'unknown@email.com';
-      const studentId = message.fromStudent?._id || 'unknown';
-      
-      if (!grouped[studentEmail]) {
-        grouped[studentEmail] = {
-          studentId: studentId,
-          studentName: message.fromStudent?.profile?.firstName 
-            ? `${message.fromStudent.profile.firstName} ${message.fromStudent.profile.lastName || ''}`.trim()
-            : message.fromStudent?.username || 'Unknown Student',
-          studentEmail: studentEmail,
-          phone: message.fromStudent?.profile?.phone || message.phone || 'Not provided',
-          messages: [],
-          unreadCount: 0,
-          totalCount: 0,
-          lastMessage: null
-        };
-      }
-      
-      grouped[studentEmail].messages.push(message);
-      grouped[studentEmail].totalCount++;
-      
-      if (!message.read) {
-        grouped[studentEmail].unreadCount++;
-      }
-      
-      // Update last message
-      if (!grouped[studentEmail].lastMessage || new Date(message.createdAt) > new Date(grouped[studentEmail].lastMessage.createdAt)) {
-        grouped[studentEmail].lastMessage = message;
-      }
-    });
-    
-    // Sort messages within each group by date (newest first)
-    Object.keys(grouped).forEach(email => {
-      grouped[email].messages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    });
-    
-    return grouped;
-  };
-
-  const fetchMessages = async () => {
+  const checkAccessAndFetchCourses = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/admin/messages-from-students', {
-        params: { filter }
+      
+      // First, try to fetch masterclass courses to see if user has access
+      const response = await api.get('/courses', {
+        params: {
+          type: 'masterclass',
+          page: currentPage,
+          limit: itemsPerPage
+        }
       });
+      
       if (response.data.success) {
-        const messagesData = response.data.messages;
-        setMessages(messagesData);
-        
-        // Group messages by student email
-        const grouped = groupMessagesByStudent(messagesData);
-        setGroupedMessages(grouped);
-        
-        // Mark notifications as read when admin opens this page
-        await api.put('/notifications/mark-admin-messages-read');
+        if (response.data.courses.length === 0 && 
+            response.data.message && 
+            response.data.message.includes('No access to masterclass courses')) {
+          setHasAccess(false);
+          setCourses([]);
+          setTotalItems(0);
+        } else {
+          setCourses(response.data.courses);
+          setTotalItems(response.data.totalCount);
+          setHasAccess(true);
+          
+          const storedAccess = localStorage.getItem('masterclassAccess');
+          if (!storedAccess) {
+            localStorage.setItem('masterclassAccess', 'granted');
+          }
+        }
+      } else {
+        setHasAccess(false);
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
-      showAlert('Error loading messages', 'error');
+      console.error('Error checking access:', error);
+      if (error.response?.status === 403 || 
+          error.response?.data?.message?.includes('No access') ||
+          (error.response?.data?.courses && error.response.data.courses.length === 0)) {
+        setHasAccess(false);
+        setCourses([]);
+        setTotalItems(0);
+      } else {
+        setError('Failed to load courses. Please try again later.');
+        const storedAccess = localStorage.getItem('masterclassAccess');
+        if (storedAccess === 'granted') {
+          setHasAccess(true);
+        }
+      }
     } finally {
       setLoading(false);
+      setAccessChecked(true);
     }
   };
 
-  // NEW: Toggle group expansion
-  const toggleGroup = (studentEmail) => {
-    const newExpanded = new Set(expandedGroups);
-    if (newExpanded.has(studentEmail)) {
-      newExpanded.delete(studentEmail);
-    } else {
-      newExpanded.add(studentEmail);
-    }
-    setExpandedGroups(newExpanded);
-  };
-
-  // NEW: Expand all groups
-  const expandAllGroups = () => {
-    const allEmails = Object.keys(groupedMessages);
-    setExpandedGroups(new Set(allEmails));
-  };
-
-  // NEW: Collapse all groups
-  const collapseAllGroups = () => {
-    setExpandedGroups(new Set());
-  };
-
-  const viewMessage = (message) => {
-    setSelectedMessage(message);
-    setShowMessageModal(true);
-    
-    // Mark as read when viewed
-    if (!message.read) {
-      markAsRead(message._id);
-    }
-  };
-
-  const markAsRead = async (messageId) => {
+  const fetchQuestionSets = async () => {
     try {
-      await api.put(`/admin/messages/${messageId}/mark-read`);
-      // Update local state
-      setMessages(prev => prev.map(msg => 
-        msg._id === messageId ? { ...msg, read: true } : msg
-      ));
-      if (selectedMessage && selectedMessage._id === messageId) {
-        setSelectedMessage(prev => ({ ...prev, read: true }));
-      }
+      const response = await api.get('/masterclass-course-questions');
       
-      // Refresh grouped messages
-      const grouped = groupMessagesByStudent(messages.map(msg => 
-        msg._id === messageId ? { ...msg, read: true } : msg
-      ));
-      setGroupedMessages(grouped);
+      if (response.data.success) {
+        setQuestionSets(response.data.questionSets);
+      } else {
+        console.error('Failed to load question sets');
+      }
     } catch (error) {
-      console.error('Error marking message as read:', error);
+      console.error('Error fetching question sets:', error);
     }
   };
 
-  const sendReply = async () => {
-    if (!replyText.trim()) {
-      showAlert('Please enter a reply message', 'error');
+  const requestAccess = () => {
+    setAccessCode('');
+    setValidationError('');
+    setShowAccessModal(true);
+  };
+
+  const contactAdmin = () => {
+    if (navigateTo) {
+      navigateTo('contact-us');
+    } else {
+      window.location.hash = 'contact-us';
+    }
+  };
+
+  const validateAccessCode = async () => {
+    if (!accessCode.trim()) {
+      setValidationError('Please enter an access code');
       return;
     }
 
-    setReplying(true);
-    try {
-      const response = await api.post(`/admin/messages/${selectedMessage._id}/reply`, {
-        reply: replyText
-      });
-      
-      if (response.data.success) {
-        showAlert('Reply sent successfully!', 'success');
-        setReplyText('');
-        setShowMessageModal(false);
-        fetchMessages(); // Refresh the list
-      } else {
-        showAlert('Failed to send reply. Please try again.', 'error');
-      }
-    } catch (error) {
-      console.error('Error sending reply:', error);
-      showAlert('Failed to send reply. Please try again.', 'error');
-    } finally {
-      setReplying(false);
-    }
-  };
+    setValidating(true);
+    setValidationError('');
 
-  const generateAccessCode = async (courseId, studentId) => {
     try {
-      const response = await api.post('/admin/generate-access-code', {
-        courseId,
-        studentId
+      const response = await api.post('/courses/validate-masterclass-access', {
+        accessCode: accessCode.trim()
       });
-      
+
       if (response.data.success) {
-        showAlert(`Access code generated: ${response.data.accessCode}\n\nThis code has been sent to the student.`, 'success');
-        // Send the code to student via message
-        await api.post('/admin/messages/send-access-code', {
-          studentId,
-          accessCode: response.data.accessCode,
-          courseTitle: response.data.courseTitle
-        });
+        setHasAccess(true);
+        localStorage.setItem('masterclassAccess', 'granted');
+        setShowAccessModal(false);
+        setAccessCode('');
+        showCustomAlert('Access granted! Welcome to Masterclass Courses.', 'success');
         
-        // Refresh messages to show updated status
-        fetchMessages();
-      } else {
-        showAlert('Failed to generate access code. Please try again.', 'error');
+        await checkAccessAndFetchCourses();
       }
     } catch (error) {
-      console.error('Error generating access code:', error);
-      showAlert('Failed to generate access code. Please try again.', 'error');
+      console.error('Error validating access code:', error);
+      setValidationError(
+        error.response?.data?.message || 
+        'Invalid access code. Please contact the administrator for a valid code.'
+      );
+    } finally {
+      setValidating(false);
     }
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  // 🚨 FIXED: View Course function for Masterclass
+  const viewCourse = async (courseId) => {
+    if (!hasAccess) {
+      requestAccess();
+      return;
+    }
+
+    try {
+      console.log('🎯 Viewing masterclass course:', courseId);
+      const response = await api.get(`/courses/${courseId}`);
+      
+      if (response.data.success) {
+        setSelectedCourse(response.data.course);
+        setShowCourseModal(true);
+        setDocumentContent(null);
+        setContentType('text');
+        console.log('✅ Masterclass course loaded successfully:', response.data.course.title);
+      } else {
+        alert('Failed to load course content.');
+      }
+    } catch (error) {
+      console.error('❌ Error fetching course details:', error);
+      if (error.response?.status === 403) {
+        showCustomAlert('Access denied. You need a valid access code to view this course.', 'error');
+      } else {
+        showCustomAlert('Failed to load course content. Please try again.', 'error');
+      }
+    }
   };
 
-  // NEW: Pagination logic for student groups
-  const studentEmails = Object.keys(groupedMessages);
-  const indexOfLastStudent = currentPage * studentsPerPage;
-  const indexOfFirstStudent = indexOfLastStudent - studentsPerPage;
-  const currentStudentEmails = studentEmails.slice(indexOfFirstStudent, indexOfLastStudent);
-  const totalPages = Math.ceil(studentEmails.length / studentsPerPage);
-
-  // NEW: Pagination functions
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
-  const goToPreviousPage = () => currentPage > 1 && setCurrentPage(currentPage - 1);
-  const goToNextPage = () => currentPage < totalPages && setCurrentPage(currentPage + 1);
-
-  // NEW: Generate page numbers
-  const getPageNumbers = () => {
-    const pageNumbers = [];
-    const maxPagesToShow = 5;
+  // 🚨 FIXED: Read Document function for Masterclass
+  const readDocumentInApp = async () => {
+    if (!selectedCourse) return;
     
-    if (totalPages <= maxPagesToShow) {
-      for (let i = 1; i <= totalPages; i++) {
-        pageNumbers.push(i);
-      }
-    } else {
-      if (currentPage <= 3) {
-        for (let i = 1; i <= 4; i++) {
-          pageNumbers.push(i);
-        }
-        pageNumbers.push('...');
-        pageNumbers.push(totalPages);
-      } else if (currentPage >= totalPages - 2) {
-        pageNumbers.push(1);
-        pageNumbers.push('...');
-        for (let i = totalPages - 3; i <= totalPages; i++) {
-          pageNumbers.push(i);
+    try {
+      setDocumentLoading(true);
+      setDocumentContent(null);
+      console.log('📖 Reading masterclass document content for course:', selectedCourse._id);
+      
+      const response = await api.get(`/direct-courses/${selectedCourse._id}/view`);
+      console.log('📄 API Response:', response.data);
+      
+      if (response.data.success) {
+        setContentType(response.data.contentType || 'text');
+        
+        if (response.data.contentType === 'html' || response.data.contentType === 'text') {
+          setDocumentContent(response.data.content);
+          console.log('📝 Masterclass document content loaded successfully');
+        } else if (response.data.contentType === 'error') {
+          setDocumentContent('Error: ' + response.data.content);
+        } else {
+          setDocumentContent(response.data.content || 'Document loaded but cannot be displayed.');
         }
       } else {
-        pageNumbers.push(1);
-        pageNumbers.push('...');
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
-          pageNumbers.push(i);
-        }
-        pageNumbers.push('...');
-        pageNumbers.push(totalPages);
+        setDocumentContent('Error: ' + (response.data.message || 'Failed to load document'));
       }
+      
+    } catch (error) {
+      console.error('❌ Error reading masterclass document:', error);
+      setDocumentContent('Error loading document: ' + error.message);
+    } finally {
+      setDocumentLoading(false);
     }
-    
-    return pageNumbers;
   };
 
-  return (
-    <div className="message-from-students" style={{ background: '#f8f9fa', minHeight: '100vh' }}>
-      {/* Custom Alert */}
-      {alert.show && (
-        <div className={`custom-alert custom-alert-${alert.type}`}>
-          <div className="alert-content">
-            <i className={`fas ${
-              alert.type === 'success' ? 'fa-check-circle' :
-              alert.type === 'error' ? 'fa-exclamation-circle' :
-              'fa-info-circle'
-            } me-2`}></i>
-            {alert.message}
+  const attemptQuestions = (questionSet) => {
+    if (!hasAccess) {
+      requestAccess();
+      return;
+    }
+    
+    localStorage.setItem('currentQuestionSet', JSON.stringify({
+      id: questionSet._id,
+      type: 'masterclass',
+      title: questionSet.title,
+      description: questionSet.description,
+      questions: questionSet.questions
+    }));
+    
+    window.location.href = `${window.location.origin}/#/quiz-platform`;
+  };
+
+  const closeModal = () => {
+    setShowCourseModal(false);
+    setSelectedCourse(null);
+    setDocumentContent(null);
+    setDocumentLoading(false);
+    setContentType('text');
+  };
+
+  const closeAccessModal = () => {
+    setShowAccessModal(false);
+    setAccessCode('');
+    setValidationError('');
+  };
+
+  const handleLogout = () => {
+    setHasAccess(false);
+    localStorage.removeItem('masterclassAccess');
+    setCourses([]);
+    setQuestionSets([]);
+    setTotalItems(0);
+    setCurrentPage(1);
+    showCustomAlert('Access revoked. You can enter a new access code anytime.', 'info');
+  };
+
+  const formatCourseDate = (course) => {
+    if (course.uploadedAt) return new Date(course.uploadedAt).toLocaleDateString();
+    if (course.createdAt) return new Date(course.createdAt).toLocaleDateString();
+    if (course.date) return new Date(course.date).toLocaleDateString();
+    if (course.updatedAt) return new Date(course.updatedAt).toLocaleDateString();
+    return 'Date not available';
+  };
+
+  const formatQuestionSetDate = (questionSet) => {
+    if (questionSet.createdAt) return new Date(questionSet.createdAt).toLocaleDateString();
+    if (questionSet.updatedAt) return new Date(questionSet.updatedAt).toLocaleDateString();
+    return 'Date not available';
+  };
+
+  const showCustomAlert = (message, type = 'success') => {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = `
+      top: 100px;
+      right: 20px;
+      z-index: 9999;
+      min-width: 300px;
+      animation: slideInRight 0.3s ease-out;
+    `;
+    alertDiv.innerHTML = `
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+      if (alertDiv.parentNode) {
+        alertDiv.parentNode.removeChild(alertDiv);
+      }
+    }, 3000);
+  };
+
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <nav aria-label="Courses pagination">
+        <ul className="pagination justify-content-center">
+          <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
             <button
-              className="alert-close"
-              onClick={() => setAlert({ show: false, type: '', message: '' })}
+              className="page-link"
+              onClick={() => setCurrentPage(currentPage - 1)}
+              disabled={currentPage === 1}
             >
-              <i className="fas fa-times"></i>
+              Previous
             </button>
-          </div>
-        </div>
-      )}
+          </li>
+          
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+            <li key={page} className={`page-item ${currentPage === page ? 'active' : ''}`}>
+              <button className="page-link" onClick={() => setCurrentPage(page)}>
+                {page}
+              </button>
+            </li>
+          ))}
+          
+          <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+            <button
+              className="page-link"
+              onClick={() => setCurrentPage(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              Next
+            </button>
+          </li>
+        </ul>
+      </nav>
+    );
+  };
 
+  if (!accessChecked) {
+    return (
       <div className="container-fluid py-4">
-        {/* Header */}
-        <div className="row mb-4">
-          <div className="col-12">
-            <div className="card text-white bg-info shadow-lg">
-              <div className="card-body py-4">
-                <div className="row align-items-center">
-                  <div className="col-md-8">
-                    <h1 className="display-5 fw-bold mb-2">
-                      <i className="fas fa-envelope-open-text me-3"></i>
-                      Messages From Students
-                    </h1>
-                    <p className="lead mb-0 opacity-75">
-                      Manage and respond to student inquiries and requests
-                    </p>
-                  </div>
-                  <div className="col-md-4 text-md-end">
-                    <div className="bg-white rounded p-3 d-inline-block text-info">
-                      <h4 className="mb-0 fw-bold">{Object.keys(groupedMessages).length}</h4>
-                      <small>Student Conversations</small>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Controls */}
-        <div className="row mb-4">
-          <div className="col-12">
-            <div className="card shadow-sm border-0">
-              <div className="card-body">
-                <div className="row align-items-center">
-                  <div className="col-md-4">
-                    <h5 className="mb-0">Filter Messages:</h5>
-                  </div>
-                  <div className="col-md-4">
-                    <select
-                      className="form-select"
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value)}
-                    >
-                      <option value="all">All Messages</option>
-                      <option value="unread">Unread Only</option>
-                      <option value="read">Read (No Reply)</option>
-                      <option value="replied">Replied</option>
-                    </select>
-                  </div>
-                  <div className="col-md-4 text-end">
-                    {/* NEW: Expand/Collapse All Buttons */}
-                    <div className="btn-group">
-                      <button
-                        className="btn btn-outline-info btn-sm"
-                        onClick={expandAllGroups}
-                        disabled={Object.keys(groupedMessages).length === 0}
-                      >
-                        <i className="fas fa-expand-alt me-1"></i>Expand All
-                      </button>
-                      <button
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={collapseAllGroups}
-                        disabled={expandedGroups.size === 0}
-                      >
-                        <i className="fas fa-compress-alt me-1"></i>Collapse All
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Messages List with Grouping */}
-        <div className="row">
-          <div className="col-12">
+        <div className="row justify-content-center">
+          <div className="col-12 col-md-8 col-lg-6">
             <div className="card shadow-lg border-0">
-              <div className="card-body">
-                {loading ? (
-                  <div className="text-center py-5">
-                    <div className="spinner-border text-info mb-3" style={{width: '3rem', height: '3rem'}}>
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    <h4 className="text-info">Loading Messages...</h4>
-                  </div>
-                ) : Object.keys(groupedMessages).length === 0 ? (
-                  <div className="text-center py-5">
-                    <i className="fas fa-inbox fa-3x text-muted mb-3"></i>
-                    <h3 className="text-muted">No Messages Found</h3>
-                    <p className="text-muted">
-                      {filter === 'all' 
-                        ? "No messages from students yet." 
-                        : `No ${filter} messages found.`
-                      }
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Student Groups */}
-                    <div className="student-groups">
-                      {currentStudentEmails.map(studentEmail => {
-                        const group = groupedMessages[studentEmail];
-                        const isExpanded = expandedGroups.has(studentEmail);
-                        
-                        return (
-                          <div key={studentEmail} className="student-group mb-3">
-                            {/* Group Header */}
-                            <div 
-                              className="group-header card border-0 shadow-sm"
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => toggleGroup(studentEmail)}
-                            >
-                              <div className="card-body">
-                                <div className="row align-items-center">
-                                  <div className="col-md-8">
-                                    <div className="d-flex align-items-center">
-                                      <i className={`fas fa-chevron-${isExpanded ? 'down' : 'right'} me-3 text-info`}></i>
-                                      <div>
-                                        <h6 className="mb-1 fw-bold text-dark">
-                                          {group.studentName}
-                                          {group.unreadCount > 0 && (
-                                            <span className="badge bg-danger ms-2">
-                                              {group.unreadCount} New
-                                            </span>
-                                          )}
-                                        </h6>
-                                        <p className="mb-1 text-muted small">
-                                          <i className="fas fa-envelope me-1"></i>
-                                          {group.studentEmail}
-                                        </p>
-                                        <p className="mb-0 text-muted small">
-                                          <i className="fas fa-phone me-1"></i>
-                                          {group.phone}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="col-md-4 text-end">
-                                    <div className="d-flex justify-content-end align-items-center">
-                                      <span className="badge bg-info me-2">
-                                        {group.totalCount} {group.totalCount === 1 ? 'Message' : 'Messages'}
-                                      </span>
-                                      <small className="text-muted">
-                                        Last: {formatDate(group.lastMessage.createdAt)}
-                                      </small>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Group Messages (Collapsible) */}
-                            {isExpanded && (
-                              <div className="group-messages mt-2">
-                                {group.messages.map((message) => (
-                                  <div key={message._id} className={`message-card border rounded p-3 mb-2 ${
-                                    !message.read ? 'border-primary bg-light' : ''
-                                  }`}>
-                                    <div className="row align-items-center">
-                                      <div className="col-md-8">
-                                        <div className="d-flex align-items-start mb-2">
-                                          {!message.read && (
-                                            <span className="badge bg-primary me-2">New</span>
-                                          )}
-                                          <h6 className="mb-1 fw-bold">{message.subject}</h6>
-                                        </div>
-                                        <p className="text-muted mb-2">
-                                          {message.message.length > 150 
-                                            ? `${message.message.substring(0, 150)}...` 
-                                            : message.message
-                                          }
-                                        </p>
-                                        <small className="text-muted">
-                                          <strong>Sent:</strong> {formatDate(message.createdAt)}
-                                        </small>
-                                      </div>
-                                      <div className="col-md-4 text-end">
-                                        <div className="btn-group">
-                                          <button
-                                            className="btn btn-outline-primary btn-sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              viewMessage(message);
-                                            }}
-                                          >
-                                            <i className="fas fa-eye me-1"></i>View
-                                          </button>
-                                          {message.message.toLowerCase().includes('access code') && (
-                                            <button
-                                              className="btn btn-outline-warning btn-sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                generateAccessCode('course_id_here', message.fromStudent?._id);
-                                              }}
-                                              title="Generate Access Code"
-                                            >
-                                              <i className="fas fa-key me-1"></i>Code
-                                            </button>
-                                          )}
-                                        </div>
-                                        {message.reply && (
-                                          <div className="mt-2">
-                                            <span className="badge bg-success">
-                                              <i className="fas fa-reply me-1"></i>Replied
-                                            </span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* NEW: Pagination Controls */}
-                    {totalPages > 1 && (
-                      <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
-                        {/* Page Info */}
-                        <div className="text-muted">
-                          Showing {indexOfFirstStudent + 1} to {Math.min(indexOfLastStudent, studentEmails.length)} of {studentEmails.length} students
-                        </div>
-                        
-                        {/* Pagination */}
-                        <nav aria-label="Student pagination">
-                          <ul className="pagination pagination-sm mb-0">
-                            {/* Previous Button */}
-                            <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
-                              <button 
-                                className="page-link" 
-                                onClick={goToPreviousPage}
-                                disabled={currentPage === 1}
-                              >
-                                <i className="fas fa-chevron-left"></i>
-                              </button>
-                            </li>
-
-                            {/* Page Numbers */}
-                            {getPageNumbers().map((number, index) => (
-                              <li 
-                                key={index} 
-                                className={`page-item ${number === currentPage ? 'active' : ''} ${number === '...' ? 'disabled' : ''}`}
-                              >
-                                {number === '...' ? (
-                                  <span className="page-link">...</span>
-                                ) : (
-                                  <button 
-                                    className="page-link" 
-                                    onClick={() => paginate(number)}
-                                  >
-                                    {number}
-                                  </button>
-                                )}
-                              </li>
-                            ))}
-
-                            {/* Next Button */}
-                            <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
-                              <button 
-                                className="page-link" 
-                                onClick={goToNextPage}
-                                disabled={currentPage === totalPages}
-                              >
-                                <i className="fas fa-chevron-right"></i>
-                              </button>
-                            </li>
-                          </ul>
-                        </nav>
-                      </div>
-                    )}
-                  </>
-                )}
+              <div className="card-body text-center py-5">
+                <div className="spinner-border text-warning mb-3" style={{width: '3rem', height: '3rem'}}>
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+                <h4 className="text-warning">Checking Access...</h4>
               </div>
             </div>
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Message Detail Modal (Remains the same) */}
-      {showMessageModal && selectedMessage && (
-        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}}>
-          <div className="modal-dialog modal-lg modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header bg-primary text-white">
-                <h5 className="modal-title">
-                  <i className="fas fa-envelope me-2"></i>
-                  Message Details
-                </h5>
-                <button
-                  type="button"
-                  className="btn-close btn-close-white"
-                  onClick={() => setShowMessageModal(false)}
-                ></button>
-              </div>
-              <div className="modal-body">
-                {/* Student Information */}
-                <div className="row mb-4">
-                  <div className="col-12">
-                    <div className="card bg-light">
-                      <div className="card-body py-3">
-                        <h6 className="card-title mb-2">Student Information</h6>
-                        <div className="row">
-                          <div className="col-md-6">
-                            <small><strong>Name:</strong> {selectedMessage.fromStudent?.profile?.firstName || selectedMessage.fromStudent?.username} {selectedMessage.fromStudent?.profile?.lastName || ''}</small>
-                          </div>
-                          <div className="col-md-6">
-                            <small><strong>Email:</strong> {selectedMessage.fromStudent?.email}</small>
-                          </div>
-                          {selectedMessage.fromStudent?.profile?.phone && (
-                            <div className="col-md-6 mt-2">
-                              <small><strong>Phone:</strong> {selectedMessage.fromStudent.profile.phone}</small>
-                            </div>
-                          )}
-                          <div className="col-md-6 mt-2">
-                            <small><strong>User ID:</strong> {selectedMessage.fromStudent?._id}</small>
-                          </div>
+  if (!hasAccess) {
+    return (
+      <div className="masterclass-courses" style={{ background: '#f8f9fa', minHeight: '100vh' }}>
+        <div className="container-fluid py-4">
+          <div className="row justify-content-center">
+            <div className="col-12 col-md-8 col-lg-6">
+              <div className="card shadow-lg border-warning">
+                <div className="card-header bg-warning text-dark text-center py-4">
+                  <i className="fas fa-crown fa-3x mb-3"></i>
+                  <h1 className="display-5 fw-bold">Masterclass Courses</h1>
+                  <p className="lead mb-0">Premium content requiring special access</p>
+                </div>
+                <div className="card-body text-center py-5">
+                  <div className="mb-4">
+                    <i className="fas fa-lock fa-4x text-warning mb-3"></i>
+                    <h3 className="text-dark">Access Required</h3>
+                    <p className="text-muted">
+                      Masterclass courses contain premium content that requires a special access code.
+                      Please contact the administrator to obtain an access code.
+                    </p>
+                  </div>
+                  
+                  <div className="row mb-4">
+                    <div className="col-md-6 mb-3">
+                      <div className="card h-100 border-0 bg-light">
+                        <div className="card-body">
+                          <i className="fas fa-key fa-2x text-warning mb-3"></i>
+                          <h5>Get Access Code</h5>
+                          <p className="text-muted small">
+                            Contact the administrator to receive your unique access code
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col-md-6 mb-3">
+                      <div className="card h-100 border-0 bg-light">
+                        <div className="card-body">
+                          <i className="fas fa-shield-alt fa-2x text-warning mb-3"></i>
+                          <h5>Secure Access</h5>
+                          <p className="text-muted small">
+                            Each code is unique and can only be used by one user
+                          </p>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Message Content */}
-                <div className="mb-4">
-                  <h6 className="fw-bold">Subject</h6>
-                  <p className="text-primary fw-bold">{selectedMessage.subject}</p>
+                  <button
+                    className="btn btn-warning btn-lg"
+                    onClick={requestAccess}
+                  >
+                    <i className="fas fa-key me-2"></i>Enter Access Code
+                  </button>
                   
-                  <h6 className="fw-bold mt-3">Message</h6>
-                  <div className="border rounded p-3 bg-white">
-                    {selectedMessage.message}
+                  <div className="mt-3">
+                    <button 
+                      className="btn btn-outline-dark btn-sm"
+                      onClick={contactAdmin}
+                    >
+                      <i className="fas fa-envelope me-2"></i>Contact Administrator
+                    </button>
                   </div>
-                  
-                  <small className="text-muted mt-2 d-block">
-                    Sent: {formatDate(selectedMessage.createdAt)}
-                  </small>
                 </div>
-
-                {/* Reply Section */}
-                {!selectedMessage.reply ? (
-                  <div>
-                    <h6 className="fw-bold">Send Reply</h6>
-                    <textarea
-                      className="form-control"
-                      rows="4"
-                      placeholder="Type your reply to the student..."
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      disabled={replying}
-                    />
-                    <div className="mt-2">
-                      <small className="text-muted">
-                        This reply will be sent to the student and appear in their "Message from Admin" section.
-                      </small>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <h6 className="fw-bold">Your Reply</h6>
-                    <div className="border rounded p-3 bg-light">
-                      {selectedMessage.reply}
-                    </div>
-                    <small className="text-muted mt-2 d-block">
-                      Replied: {formatDate(selectedMessage.repliedAt)}
-                    </small>
-                  </div>
-                )}
               </div>
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setShowMessageModal(false)}
-                  disabled={replying}
-                >
-                  Close
-                </button>
-                {!selectedMessage.reply && (
+            </div>
+          </div>
+        </div>
+
+        {/* Access Code Modal */}
+        {showAccessModal && (
+          <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header bg-warning text-dark">
+                  <h5 className="modal-title">
+                    <i className="fas fa-key me-2"></i>
+                    Enter Access Code
+                  </h5>
                   <button
                     type="button"
-                    className="btn btn-primary"
-                    onClick={sendReply}
-                    disabled={replying || !replyText.trim()}
+                    className="btn-close"
+                    onClick={closeAccessModal}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <div className="alert alert-info">
+                    <h6>Masterclass Access Required</h6>
+                    <p className="mb-0">Enter the access code provided by the administrator.</p>
+                  </div>
+                  
+                  <div className="mb-3">
+                    <label className="form-label fw-bold">Access Code</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Enter your access code..."
+                      value={accessCode}
+                      onChange={(e) => setAccessCode(e.target.value)}
+                      disabled={validating}
+                    />
+                    {validationError && (
+                      <div className="text-danger small mt-2">{validationError}</div>
+                    )}
+                  </div>
+                  
+                  <div className="alert alert-warning">
+                    <small>
+                      <i className="fas fa-info-circle me-2"></i>
+                      Don't have an access code? Contact the administrator to request one.
+                    </small>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={closeAccessModal}
+                    disabled={validating}
                   >
-                    {replying ? (
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-warning"
+                    onClick={validateAccessCode}
+                    disabled={validating || !accessCode.trim()}
+                  >
+                    {validating ? (
                       <>
                         <span className="spinner-border spinner-border-sm me-2" role="status"></span>
-                        Sending...
+                        Validating...
                       </>
                     ) : (
                       <>
-                        <i className="fas fa-paper-plane me-2"></i>
-                        Send Reply
+                        <i className="fas fa-check me-2"></i>
+                        Validate Code
                       </>
                     )}
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="container-fluid py-4">
+        <div className="row justify-content-center">
+          <div className="col-12 col-md-8 col-lg-6">
+            <div className="card shadow-lg border-0">
+              <div className="card-body text-center py-5">
+                <div className="spinner-border text-warning mb-3" style={{width: '3rem', height: '3rem'}}>
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+                <h4 className="text-warning">Loading Masterclass Courses...</h4>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container-fluid py-4">
+        <div className="row justify-content-center">
+          <div className="col-12 col-md-8 col-lg-6">
+            <div className="alert alert-danger text-center">
+              <i className="fas fa-exclamation-triangle fa-2x mb-3"></i>
+              <h4>Error Loading Courses</h4>
+              <p>{error}</p>
+              <button className="btn btn-warning" onClick={checkAccessAndFetchCourses}>
+                Try Again
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="masterclass-courses" style={{ background: '#f8f9fa', minHeight: '100vh' }}>
+      <div className="container-fluid py-4">
+        {/* Header */}
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="card text-white bg-warning shadow-lg">
+              <div className="card-body py-4">
+                <div className="row align-items-center">
+                  <div className="col-md-8">
+                    <h1 className="display-5 fw-bold mb-2 text-dark">
+                      <i className="fas fa-crown me-3"></i>
+                      Masterclass Courses
+                    </h1>
+                    <p className="lead mb-0 opacity-75 text-dark">
+                      Premium courses with images and rich formatting. Read directly in the app.
+                    </p>
+                  </div>
+                  <div className="col-md-4 text-md-end">
+                    <div className="bg-dark rounded p-3 d-inline-block text-warning">
+                      <h4 className="mb-0 fw-bold">{totalItems + questionSets.length}</h4>
+                      <small>Masterclass Learning Items</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Access Granted Banner */}
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="alert alert-success border-0 shadow-sm">
+              <div className="row align-items-center">
+                <div className="col-md-8">
+                  <h5 className="mb-1">
+                    <i className="fas fa-check-circle me-2"></i>
+                    Access Granted
+                  </h5>
+                  <p className="mb-0">
+                    You have access to premium masterclass courses and question sets. All content can be viewed directly in the app.
+                  </p>
+                </div>
+                <div className="col-md-4 text-md-end">
+                  <button 
+                    className="btn btn-outline-success"
+                    onClick={handleLogout}
+                  >
+                    <i className="fas fa-sign-out-alt me-2"></i>Logout
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="row mb-4">
+          <div className="col-12">
+            <div className="card shadow-sm border-0">
+              <div className="card-body p-0">
+                <ul className="nav nav-tabs nav-justified">
+                  <li className="nav-item">
+                    <button
+                      className={`nav-link ${activeTab === 'courses' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('courses')}
+                    >
+                      <i className="fas fa-crown me-2"></i>Masterclass Courses
+                      <span className="badge bg-warning ms-2">{courses.length}</span>
+                    </button>
+                  </li>
+                  <li className="nav-item">
+                    <button
+                      className={`nav-link ${activeTab === 'questions' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('questions')}
+                    >
+                      <i className="fas fa-graduation-cap me-2"></i>Masterclass Questions
+                      <span className="badge bg-info ms-2">{questionSets.length}</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Courses Tab Content */}
+        {activeTab === 'courses' && (
+          <div className="row">
+            <div className="col-12">
+              {courses.length === 0 ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <i className="fas fa-book-open fa-4x text-muted mb-3"></i>
+                    <h3 className="text-muted">No Masterclass Courses Available</h3>
+                    <p className="text-muted">
+                      There are no masterclass courses available at the moment. 
+                      Check back later for new course additions.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="row">
+                  {courses.map((course) => (
+                    <div key={course._id} className="col-lg-6 col-xl-4 mb-4">
+                      <div className="card course-card h-100 shadow-sm border-warning">
+                        <div className="card-header bg-warning text-dark border-0">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="badge bg-dark fs-6">
+                              <i className="fas fa-crown me-1"></i>
+                              Masterclass
+                            </span>
+                            <i className="fas fa-unlock text-success"></i>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <h5 className="card-title text-dark mb-3">{course.title}</h5>
+                          <p className="card-text text-muted mb-3">
+                            {course.description ? (course.description.length > 120 
+                              ? `${course.description.substring(0, 120)}...` 
+                              : course.description) : 'No description available'
+                            }
+                          </p>
+                          
+                          <div className="course-meta mb-3">
+                            {course.fileName && (
+                              <small className="text-muted d-block">
+                                <i className="fas fa-file me-1"></i>
+                                {course.fileName}
+                              </small>
+                            )}
+                            {course.htmlContent && (
+                              <small className="text-success d-block">
+                                <i className="fas fa-image me-1"></i>
+                                Includes images and formatting
+                              </small>
+                            )}
+                          </div>
+                        </div>
+                        <div className="card-footer bg-transparent border-0 pt-0">
+                          <div className="d-grid gap-2">
+                            <button
+                              className="btn btn-warning btn-sm"
+                              onClick={() => viewCourse(course._id)}
+                            >
+                              <i className="fas fa-eye me-2"></i>View Course
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Questions Tab Content */}
+        {activeTab === 'questions' && (
+          <div className="row">
+            <div className="col-12">
+              {questionSets.length === 0 ? (
+                <div className="card shadow-lg border-0">
+                  <div className="card-body text-center py-5">
+                    <i className="fas fa-graduation-cap fa-4x text-muted mb-3"></i>
+                    <h3 className="text-muted">No Masterclass Question Sets Available</h3>
+                    <p className="text-muted">
+                      There are no masterclass question sets available at the moment. 
+                      Check back later for new question additions.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="row">
+                  {questionSets.map((questionSet) => (
+                    <div key={questionSet._id} className="col-lg-6 col-xl-4 mb-4">
+                      <div className="card question-card h-100 shadow-sm border-warning">
+                        <div className="card-header bg-warning text-dark">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="badge bg-dark fs-6">
+                              <i className="fas fa-graduation-cap me-1"></i>
+                              Masterclass Questions
+                            </span>
+                            <small className="text-dark">
+                              {formatQuestionSetDate(questionSet)}
+                            </small>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <h5 className="card-title text-dark mb-3">{questionSet.title}</h5>
+                          <p className="card-text text-muted mb-3">
+                            {questionSet.description ? (questionSet.description.length > 120 
+                              ? `${questionSet.description.substring(0, 120)}...` 
+                              : questionSet.description) : 'No description available'
+                            }
+                          </p>
+                          
+                          <div className="question-meta mb-3">
+                            <small className="text-muted d-block">
+                              <i className="fas fa-list-ol me-1"></i>
+                              {questionSet.questions?.length || 20} Questions
+                            </small>
+                            <small className="text-muted d-block">
+                              <i className="fas fa-clock me-1"></i>
+                              15 Minutes Time Limit
+                            </small>
+                            <small className="text-muted d-block">
+                              <i className="fas fa-star me-1"></i>
+                              5 Marks per Question
+                            </small>
+                            <small className="text-success d-block">
+                              <i className="fas fa-shield-alt me-1"></i>
+                              Premium Masterclass Content
+                            </small>
+                          </div>
+                        </div>
+                        <div className="card-footer bg-transparent border-0 pt-0">
+                          <div className="d-grid gap-2">
+                            <button
+                              className="btn btn-success btn-sm"
+                              onClick={() => attemptQuestions(questionSet)}
+                            >
+                              <i className="fas fa-play me-2"></i>Attempt Questions
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && activeTab === 'courses' && (
+          <div className="row mt-4">
+            <div className="col-12">
+              {renderPagination()}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Course Modal - FIXED: This should now work properly */}
+      {showCourseModal && selectedCourse && (
+        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}}>
+          <div className="modal-dialog modal-xl modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header bg-warning text-dark">
+                <h5 className="modal-title">
+                  <i className="fas fa-crown me-2"></i>
+                  {selectedCourse.title}
+                  {contentType === 'html' && (
+                    <span className="badge bg-success ms-2">
+                      <i className="fas fa-image me-1"></i>
+                      With Images
+                    </span>
+                  )}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={closeModal}
+                ></button>
+              </div>
+              
+              <div className="modal-body" style={{maxHeight: '80vh', overflowY: 'auto'}}>
+                
+                {!documentContent ? (
+                  // Preview View
+                  <div>
+                    <div className="row mb-4">
+                      <div className="col-md-6">
+                        <h6>Course Information</h6>
+                        <p className="text-muted mb-2">
+                          <strong>Type:</strong> Masterclass Course
+                        </p>
+                        <p className="text-muted mb-2">
+                          <strong>Uploaded:</strong> {formatCourseDate(selectedCourse)}
+                        </p>
+                        {selectedCourse.fileName && (
+                          <p className="text-muted mb-2">
+                            <strong>File:</strong> {selectedCourse.fileName}
+                          </p>
+                        )}
+                        {selectedCourse.htmlContent && (
+                          <p className="text-success mb-2">
+                            <strong>Format:</strong> Includes images and rich formatting
+                          </p>
+                        )}
+                      </div>
+                      <div className="col-md-6">
+                        <h6>Description</h6>
+                        <p className="text-muted">{selectedCourse.description || 'No description available'}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="text-center py-4">
+                      <button 
+                        className="btn btn-warning btn-lg" 
+                        onClick={readDocumentInApp}
+                        disabled={documentLoading}
+                      >
+                        {documentLoading ? (
+                          <>
+                            <i className="fas fa-spinner fa-spin me-2"></i>Loading Document...
+                          </>
+                        ) : (
+                          <>
+                            <i className="fas fa-book-open me-2"></i>Read Document in App
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // Document Content View - SUPPORTS HTML AND IMAGES
+                  <div>
+                    {documentLoading ? (
+                      <div className="text-center py-5">
+                        <div className="spinner-border text-warning mb-3" style={{width: '3rem', height: '3rem'}}>
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <h4>Loading Document</h4>
+                        <p className="text-muted">Please wait while we load the document content...</p>
+                      </div>
+                    ) : (
+                      <div className="document-content">
+                        <div className="bg-light rounded p-3 mb-3 d-flex justify-content-between align-items-center">
+                          <small className="text-muted">
+                            <i className="fas fa-info-circle me-1"></i>
+                            {contentType === 'html' ? 'Document with images and formatting' : 'Text document'}
+                          </small>
+                          <small className="text-muted">
+                            <i className="fas fa-file-text me-1"></i>
+                            {documentContent.length} characters
+                          </small>
+                        </div>
+                        <div 
+                          className="document-content-display"
+                          style={{
+                            background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+                            padding: '2.5rem',
+                            border: '1px solid #dee2e6',
+                            borderRadius: '0.75rem',
+                            maxHeight: '60vh',
+                            overflowY: 'auto',
+                            wordWrap: 'break-word',
+                            lineHeight: '1.7',
+                            fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+                            fontSize: '16px',
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                            color: '#2c3e50'
+                          }}
+                        >
+                          {contentType === 'html' ? (
+                            <div 
+                              dangerouslySetInnerHTML={{ __html: documentContent }}
+                              style={{
+                                textAlign: 'left'
+                              }}
+                            />
+                          ) : (
+                            <div style={{ textAlign: 'justify', whiteSpace: 'pre-wrap' }}>
+                              {documentContent.split('\n').map((paragraph, index) => (
+                                paragraph.trim() ? (
+                                  <div 
+                                    key={index} 
+                                    className="paragraph"
+                                    style={{
+                                      marginBottom: '1.2rem',
+                                      paddingBottom: '0.5rem',
+                                      borderBottom: paragraph.trim().endsWith(':') ? '2px solid #ffc107' : 'none'
+                                    }}
+                                  >
+                                    {paragraph}
+                                  </div>
+                                ) : (
+                                  <br key={index} />
+                                )
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
+              </div>
+              
+              <div className="modal-footer">
+                {documentContent && (
+                  <button
+                    className="btn btn-outline-secondary"
+                    onClick={() => setDocumentContent(null)}
+                  >
+                    <i className="fas fa-arrow-left me-2"></i>Back to Preview
+                  </button>
+                )}
+                <button
+                  className="btn btn-secondary"
+                  onClick={closeModal}
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .custom-alert {
-          position: fixed;
-          top: 100px;
-          right: 20px;
-          z-index: 9999;
-          min-width: 300px;
-          border-radius: 8px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          animation: slideInRight 0.3s ease-out;
-        }
-        
-        .custom-alert-success {
-          background: #d4edda;
-          color: #155724;
-          border: 1px solid #c3e6cb;
-        }
-        
-        .custom-alert-error {
-          background: #f8d7da;
-          color: #721c24;
-          border: 1px solid #f5c6cb;
-        }
-        
-        .alert-content {
-          padding: 12px 16px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        
-        .alert-close {
-          background: none;
-          border: none;
-          color: inherit;
-          cursor: pointer;
-          padding: 4px;
-          margin-left: 12px;
-        }
-        
-        .group-header:hover {
-          background-color: #f8f9fa;
-        }
-        
-        .student-group {
-          transition: all 0.3s ease;
-        }
-        
-        @keyframes slideInRight {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-      `}</style>
     </div>
   );
 };
 
-export default MessageFromStudents;
+export default MasterclassCourses;
