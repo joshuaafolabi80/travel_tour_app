@@ -1,4 +1,3 @@
-// src/components/QuizAttempt.jsx - COMPLETE FIXED VERSION WITH AUDIO FEEDBACK
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../services/api';
 import './QuizAttempt.css';
@@ -13,8 +12,7 @@ const QuizAttempt = ({ navigateTo }) => {
   const [selectedOption, setSelectedOption] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [quizCompleted, setQuizCompleted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(20 * 60); // 20 minutes in seconds
-  const [userName, setUserName] = useState('');
+  const [timeLeft, setTimeLeft] = useState(15 * 60);
   const [showResultsScreen, setShowResultsScreen] = useState(false);
   const [finalScore, setFinalScore] = useState(0);
   const [answerSubmitted, setAnswerSubmitted] = useState(false);
@@ -24,9 +22,28 @@ const QuizAttempt = ({ navigateTo }) => {
   const [submitting, setSubmitting] = useState(false);
   const [currentQuestionSet, setCurrentQuestionSet] = useState(null);
   
-  // Audio references
-  const correctSoundRef = useRef(null);
-  const wrongSoundRef = useRef(null);
+  // Sound effects using Speech Synthesis
+  const playCorrectSound = () => {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance('Correct!');
+      utterance.rate = 1.2;
+      utterance.volume = 0.8;
+      utterance.pitch = 1.1;
+      speechSynthesis.speak(utterance);
+    }
+  };
+
+  const playWrongSound = () => {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance('Wrong!');
+      utterance.rate = 1.2;
+      utterance.volume = 0.8;
+      utterance.pitch = 0.9;
+      speechSynthesis.speak(utterance);
+    }
+  };
 
   // Load question set from localStorage on component mount
   useEffect(() => {
@@ -37,18 +54,59 @@ const QuizAttempt = ({ navigateTo }) => {
         setCurrentQuestionSet(questionSetData);
         console.log('📝 Loaded question set from storage:', questionSetData);
         
-        // Use questions from the stored set
         if (questionSetData.questions && questionSetData.questions.length > 0) {
           console.log('🎯 Using stored questions:', questionSetData.questions.length);
           
           // Format questions to ensure they have the correct structure
-          const formattedQuestions = questionSetData.questions.map((q, index) => ({
-            id: q._id || q.id || `q-${index}`,
-            question: q.question || q.text || 'Question not available',
-            options: q.options || [],
-            correctAnswer: q.correctAnswer !== undefined ? q.correctAnswer : 0,
-            explanation: q.explanation || ''
-          }));
+          const formattedQuestions = questionSetData.questions.map((q, index) => {
+            // DEBUG: Log each question's correct answer
+            console.log(`🔍 Question ${index}:`, {
+              question: q.question,
+              options: q.options,
+              correctAnswer: q.correctAnswer,
+              correctOption: q.correctOption,
+              explanation: q.explanation
+            });
+            
+            // FIX: Handle both text-based correctAnswer and index-based correctOption
+            let correctAnswerIndex = 0;
+            
+            if (q.correctOption !== undefined) {
+              // If correctOption exists (index-based), use it
+              correctAnswerIndex = parseInt(q.correctOption);
+              console.log(`✅ Using correctOption index: ${correctAnswerIndex}`);
+            } else if (q.correctAnswer && q.options) {
+              // If correctAnswer is text-based, find the index of the matching option
+              const index = q.options.findIndex(option => 
+                option.trim().toLowerCase() === q.correctAnswer.trim().toLowerCase()
+              );
+              if (index !== -1) {
+                correctAnswerIndex = index;
+                console.log(`✅ Found correct answer index from text: ${correctAnswerIndex}`);
+              } else {
+                // Fallback: try to find partial match
+                const partialMatch = q.options.findIndex(option => 
+                  option.toLowerCase().includes(q.correctAnswer.toLowerCase()) ||
+                  q.correctAnswer.toLowerCase().includes(option.toLowerCase())
+                );
+                if (partialMatch !== -1) {
+                  correctAnswerIndex = partialMatch;
+                  console.log(`✅ Found partial match index: ${correctAnswerIndex}`);
+                } else {
+                  console.warn(`❌ Could not find matching option for correctAnswer: "${q.correctAnswer}"`);
+                }
+              }
+            }
+            
+            return {
+              id: q._id || q.id || `q-${index}`,
+              question: q.question || q.text || 'Question not available',
+              options: q.options || [],
+              correctAnswer: correctAnswerIndex,
+              explanation: q.explanation || '',
+              originalCorrectAnswer: q.correctAnswer // Keep original for debugging
+            };
+          });
           
           setQuestions(formattedQuestions);
           setLoading(false);
@@ -68,36 +126,22 @@ const QuizAttempt = ({ navigateTo }) => {
     }
   }, []);
 
-  // Initialize audio elements
-  useEffect(() => {
-    correctSoundRef.current = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
-    wrongSoundRef.current = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
-    
-    // Create simple beep sounds
-    const createBeepSound = (frequency, duration) => {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.value = frequency;
-      oscillator.type = 'sine';
-      
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-      
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + duration);
-    };
-
-    // Override play methods with custom beeps
-    correctSoundRef.current.play = () => createBeepSound(800, 0.3);
-    wrongSoundRef.current.play = () => createBeepSound(400, 0.5);
-  }, []);
-
   const currentQuestion = questions[currentQuestionIndex];
+
+  // DEBUG: Log current question details whenever it changes
+  useEffect(() => {
+    if (currentQuestion) {
+      console.log('🎯 Current Question Details:', {
+        index: currentQuestionIndex,
+        question: currentQuestion.question,
+        options: currentQuestion.options,
+        correctAnswerIndex: currentQuestion.correctAnswer,
+        correctAnswerValue: currentQuestion.options ? currentQuestion.options[currentQuestion.correctAnswer] : 'N/A',
+        originalCorrectAnswer: currentQuestion.originalCorrectAnswer,
+        explanation: currentQuestion.explanation
+      });
+    }
+  }, [currentQuestion, currentQuestionIndex]);
 
   // Track quiz start time
   useEffect(() => {
@@ -106,7 +150,7 @@ const QuizAttempt = ({ navigateTo }) => {
     }
   }, [questions.length, quizStartTime]);
 
-  // Timer countdown - 20 minutes
+  // Timer countdown - 15 minutes
   useEffect(() => {
     if (questions.length === 0 || timeLeft <= 0 || quizCompleted) return;
 
@@ -130,41 +174,52 @@ const QuizAttempt = ({ navigateTo }) => {
     console.log('Time expired - auto submitting quiz');
     setQuizCompleted(true);
     setQuizEndTime(new Date());
-    
-    const finalScoreValue = score;
-    setFinalScore(finalScoreValue);
+    setFinalScore(score);
     setShowResultsScreen(true);
-  }, [score, answers.length, questions.length]);
+  }, [score]);
 
   const handleAnswer = (optionIndex) => {
     if (answerSubmitted || !currentQuestion) return;
     
+    // DEBUG: Log answer selection details
+    console.log('🎯 Answer Selection:', {
+      selectedOptionIndex: optionIndex,
+      selectedOptionValue: currentQuestion.options[optionIndex],
+      correctAnswerIndex: currentQuestion.correctAnswer,
+      correctAnswerValue: currentQuestion.options[currentQuestion.correctAnswer],
+      isCorrect: optionIndex === currentQuestion.correctAnswer
+    });
+
     const isCorrect = optionIndex === currentQuestion.correctAnswer;
     setSelectedOption(optionIndex);
     setShowFeedback(true);
     setAnswerSubmitted(true);
 
-    // Play sound feedback
+    // Play sound feedback and update score
     if (isCorrect) {
-      if (correctSoundRef.current) {
-        correctSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
-      }
-      setScore(score + 1);
+      playCorrectSound();
+      // FIXED: Add 5 points for each correct answer
+      setScore(prevScore => {
+        const newScore = prevScore + 5;
+        console.log(`✅ Correct answer! Score increased from ${prevScore} to ${newScore}`);
+        return newScore;
+      });
     } else {
-      if (wrongSoundRef.current) {
-        wrongSoundRef.current.play().catch(e => console.log('Audio play failed:', e));
-      }
+      playWrongSound();
+      console.log(`❌ Wrong answer! Score remains at ${score}`);
     }
 
     const newAnswer = {
-      questionId: currentQuestion.id,
-      question: currentQuestion.question,
+      questionId: currentQuestion.id, // This is now a string, not ObjectId
+      questionText: currentQuestion.question,
       selectedOption: optionIndex,
-      selectedAnswer: optionIndex,
+      selectedAnswer: currentQuestion.options[optionIndex],
       correctAnswer: currentQuestion.correctAnswer,
+      correctAnswerText: currentQuestion.options[currentQuestion.correctAnswer],
       isCorrect: isCorrect,
       explanation: currentQuestion.explanation,
-      options: currentQuestion.options
+      options: currentQuestion.options,
+      points: isCorrect ? 5 : 0 // Track points earned for this question
     };
     
     setAnswers(prev => [...prev, newAnswer]);
@@ -228,80 +283,83 @@ const QuizAttempt = ({ navigateTo }) => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleSubmitQuiz = async () => {
-    if (!userName.trim()) {
-      alert('Please enter your name before submitting.');
-      return;
-    }
+  // Calculate maximum possible score
+  const calculateMaxScore = () => {
+    return questions.length * 5;
+  };
 
+  // Calculate percentage based on 5-point system
+  const calculatePercentage = () => {
+    const maxScore = calculateMaxScore();
+    return maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0;
+  };
+
+  const handleSubmitQuiz = async () => {
     try {
       setSubmitting(true);
       
       const userData = JSON.parse(localStorage.getItem('userData') || '{}');
       const userId = userData._id || userData.id || 'anonymous';
 
-      // Calculate all required fields
+      // CRITICAL FIX: Use the username from localStorage to ensure consistency
+      const userDisplayName = userData.username || userData.name || 'Unknown User';
+      
       const timeTaken = calculateTimeTaken();
-      const percentage = questions.length > 0 ? Math.round((finalScore / questions.length) * 100) : 0;
+      const percentage = calculatePercentage();
+      const maxScore = calculateMaxScore();
       
       const getRemark = (percent) => {
-        if (percent >= 80) return "Excellent";
-        if (percent >= 60) return "Good";
-        if (percent >= 40) return "Fair";
+        if (percent >= 90) return "Excellent";
+        if (percent >= 80) return "Very Good";
+        if (percent >= 70) return "Good";
+        if (percent >= 60) return "Satisfactory";
         return "Needs Improvement";
       };
 
       const courseName = currentQuestionSet?.title || 'Course Questions';
+      const courseType = currentQuestionSet?.type || 'general';
       const finalRemark = getRemark(percentage);
 
-      // Format answers to match server schema
-      const formattedAnswers = answers.map((answer, index) => ({
-        questionId: answer.questionId,
-        question: answer.question,
-        selectedOption: answer.selectedOption,
-        correctAnswer: answer.correctAnswer,
-        isCorrect: answer.isCorrect,
-        explanation: answer.explanation,
-        options: answer.options
-      }));
-
+      // FIXED: Use the consistent user name from localStorage
       const quizData = {
-        answers: formattedAnswers,
+        answers: answers,
         userId: userId,
-        userName: userName.trim(),
-        courseId: currentQuestionSet?.id,
+        userName: userDisplayName, // Use consistent name from localStorage
+        courseId: currentQuestionSet?.id || 'unknown-course',
         courseName: courseName,
-        courseType: currentQuestionSet?.type || 'general',
-        destination: courseName,
+        courseType: courseType,
         score: finalScore,
+        maxScore: maxScore,
         totalQuestions: questions.length,
         percentage: percentage,
         timeTaken: timeTaken,
         remark: finalRemark,
-        status: "completed",
-        date: new Date().toISOString(),
-        submittedAt: new Date().toISOString(),
-        questionSetId: currentQuestionSet?.id,
-        questionSetTitle: currentQuestionSet?.title,
-        questionSetType: currentQuestionSet?.type
+        questionSetId: currentQuestionSet?.id || 'unknown-set',
+        questionSetTitle: currentQuestionSet?.title || 'Unknown Title',
+        questionSetType: courseType
       };
 
-      console.log('📤 Submitting quiz data:', quizData);
+      console.log('📤 Submitting course quiz data:', quizData);
+      console.log('👤 Using username from localStorage:', userDisplayName);
       
-      const response = await api.post('/quiz/results', quizData);
-      console.log('✅ Quiz submission response:', response.data);
+      // 🚨 CRITICAL FIX: Use the new course-results endpoint instead of quiz/results
+      const response = await api.post('/course-results', quizData);
+      console.log('✅ Course quiz submission response:', response.data);
       
       if (response.data.success) {
         setShowSuccessMessage(true);
-        console.log('🎉 Quiz submitted successfully!');
+        console.log('🎉 Course quiz submitted successfully!');
         
         // Clear stored question set
         localStorage.removeItem('currentQuestionSet');
         
-        // Navigate to quiz scores using navigateTo prop
         setTimeout(() => {
           if (navigateTo) {
-            navigateTo('quiz-scores');
+            // Navigate to Course and Remarks
+            navigateTo('course-remarks');
+          } else {
+            // Fallback navigation
+            window.location.href = '/course-remarks';
           }
         }, 2000);
       } else {
@@ -309,11 +367,15 @@ const QuizAttempt = ({ navigateTo }) => {
         setSubmitting(false);
       }
     } catch (error) {
-      console.error('❌ Error submitting quiz:', error);
+      console.error('❌ Error submitting course quiz:', error);
       console.error('Error details:', error.response?.data || error.message);
       setSubmitting(false);
       
-      if (error.response?.data?.message) {
+      // More detailed error handling
+      if (error.response?.data?.error) {
+        console.error('Server validation error:', error.response.data.error);
+        alert('Validation error: ' + JSON.stringify(error.response.data.error));
+      } else if (error.response?.data?.message) {
         alert('Error submitting quiz: ' + error.response.data.message);
       } else {
         alert('Error submitting quiz. Please check console for details.');
@@ -405,8 +467,13 @@ const QuizAttempt = ({ navigateTo }) => {
 
   // Results Screen
   if (showResultsScreen) {
-    const percentage = questions.length > 0 ? ((finalScore / questions.length) * 100).toFixed(1) : 0;
+    const percentage = calculatePercentage();
     const timeTaken = calculateTimeTaken();
+    const maxScore = calculateMaxScore();
+    
+    // Get user data for display
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    const userDisplayName = userData.username || userData.name || 'Student';
     
     return (
       <div className="quiz-results-container">
@@ -417,7 +484,7 @@ const QuizAttempt = ({ navigateTo }) => {
               {showSuccessMessage && (
                 <div className="alert alert-success alert-dismissible fade show mb-4" role="alert">
                   <i className="fas fa-check-circle me-2"></i>
-                  <strong>Success!</strong> Quiz submitted successfully! Redirecting to scores page...
+                  <strong>Success!</strong> Quiz submitted successfully! Redirecting to course results...
                 </div>
               )}
               
@@ -439,24 +506,29 @@ const QuizAttempt = ({ navigateTo }) => {
                     {currentQuestionSet?.title || 'Course Questions'} Results
                   </h3>
                   
+                  <div className="user-info mb-4 p-3 bg-light rounded">
+                    <h5 className="text-success">Results will be saved for: {userDisplayName}</h5>
+                    <small className="text-muted">Your quiz results are automatically linked to your account</small>
+                  </div>
+                  
                   <div className="results-grid mb-4">
                     <div className="row text-center">
                       <div className="col-4">
                         <div className="result-item">
                           <h4 className="text-success">{finalScore}</h4>
-                          <p className="text-muted mb-0">Correct</p>
+                          <p className="text-muted mb-0">Your Score</p>
                         </div>
                       </div>
                       <div className="col-4">
                         <div className="result-item">
-                          <h4 className="text-danger">{questions.length - finalScore}</h4>
-                          <p className="text-muted mb-0">Wrong</p>
+                          <h4 className="text-info">{maxScore}</h4>
+                          <p className="text-muted mb-0">Max Score</p>
                         </div>
                       </div>
                       <div className="col-4">
                         <div className="result-item">
-                          <h4 className="text-info">{questions.length}</h4>
-                          <p className="text-muted mb-0">Total</p>
+                          <h4 className="text-warning">{questions.length}</h4>
+                          <p className="text-muted mb-0">Questions</p>
                         </div>
                       </div>
                     </div>
@@ -468,29 +540,23 @@ const QuizAttempt = ({ navigateTo }) => {
                         <strong>Time Taken:</strong> {Math.floor(timeTaken / 60)}:{(timeTaken % 60).toString().padStart(2, '0')}
                       </div>
                       <div className="col-6">
-                        <strong>Score:</strong> {finalScore}/{questions.length}
+                        <strong>Score:</strong> {finalScore}/{maxScore}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <label htmlFor="userName" className="form-label fw-semibold">
-                      Enter your name to save results:
-                    </label>
-                    <input
-                      type="text"
-                      className="form-control form-control-lg"
-                      id="userName"
-                      value={userName}
-                      onChange={(e) => setUserName(e.target.value)}
-                      placeholder="Your full name"
-                    />
+                    <div className="row mt-2">
+                      <div className="col-12">
+                        <small className="text-muted">
+                          <i className="fas fa-star text-warning me-1"></i>
+                          Scoring: 5 points per correct answer
+                        </small>
+                      </div>
+                    </div>
                   </div>
 
                   <button 
                     className="btn btn-success btn-lg w-100 py-3"
                     onClick={handleSubmitQuiz}
-                    disabled={!userName.trim() || submitting}
+                    disabled={submitting}
                   >
                     {submitting ? (
                       <>
@@ -537,6 +603,9 @@ const QuizAttempt = ({ navigateTo }) => {
                       </span>
                       <span className="badge bg-success fs-6 me-2">
                         Score: {score}
+                      </span>
+                      <span className="badge bg-info fs-6 me-2">
+                        Max: {calculateMaxScore()}
                       </span>
                       <span className={`badge fs-6 ${timeLeft < 300 ? 'bg-danger' : 'bg-warning'}`}>
                         <i className="fas fa-clock me-1"></i>
@@ -606,11 +675,11 @@ const QuizAttempt = ({ navigateTo }) => {
                             <i className={`fas fa-${selectedOption === currentQuestion.correctAnswer ? 'check' : 'times'} fa-2x text-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} me-3`}></i>
                             <div>
                               <h5 className={`text-${selectedOption === currentQuestion.correctAnswer ? 'success' : 'danger'} mb-1`}>
-                                {selectedOption === currentQuestion.correctAnswer ? 'Correct! Well done! 🎉' : 'Incorrect! ❌'}
+                                {selectedOption === currentQuestion.correctAnswer ? 'Correct! +5 Points! 🎉' : 'Incorrect! No points ❌'}
                               </h5>
                               <p className="mb-0 text-muted">
                                 {selectedOption === currentQuestion.correctAnswer 
-                                  ? 'You selected the right answer.' 
+                                  ? `You earned 5 points! Total: ${score} points` 
                                   : `You selected: "${currentQuestion.options[selectedOption]}"`}
                               </p>
                             </div>
@@ -681,68 +750,6 @@ const QuizAttempt = ({ navigateTo }) => {
           </div>
         </div>
       </div>
-
-      {/* Hidden audio elements for fallback */}
-      <audio ref={correctSoundRef} preload="auto">
-        <source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav" />
-      </audio>
-      <audio ref={wrongSoundRef} preload="auto">
-        <source src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==" type="audio/wav" />
-      </audio>
-
-      <style jsx>{`
-        .quiz-option {
-          border: 2px solid #e9ecef;
-          transition: all 0.3s ease;
-        }
-        
-        .quiz-option:hover:not(.correct-option):not(.wrong-option) {
-          border-color: #007bff;
-          background-color: #f8f9fa;
-        }
-        
-        .correct-option {
-          border: 3px solid #28a745 !important;
-          background-color: #d4edda !important;
-          box-shadow: 0 0 10px rgba(40, 167, 69, 0.3);
-        }
-        
-        .wrong-option {
-          border: 3px solid #dc3545 !important;
-          background-color: #f8d7da !important;
-          box-shadow: 0 0 10px rgba(220, 53, 69, 0.3);
-        }
-        
-        .explanation-box {
-          border-radius: 15px !important;
-          box-shadow: 0 4px 15px rgba(0, 123, 255, 0.1);
-          border: 2px solid #17a2b8 !important;
-        }
-        
-        .explanation-box .card-header {
-          border-radius: 13px 13px 0 0 !important;
-          border-bottom: 2px solid #17a2b8;
-        }
-        
-        .status-card {
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        
-        .score-circle {
-          width: 120px;
-          height: 120px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #007bff, #0056b3);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: bold;
-          font-size: 1.5rem;
-          box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
-        }
-      `}</style>
     </div>
   );
 };

@@ -16,7 +16,7 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// 🚨 ENHANCED REQUEST LOGGING MIDDLEWARE
+// ENHANCED REQUEST LOGGING MIDDLEWARE
 app.use((req, res, next) => {
   console.log(`🌐 ${req.method} ${req.path}`, {
     query: Object.keys(req.query).length > 0 ? req.query : undefined,
@@ -30,14 +30,245 @@ app.use((req, res, next) => {
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/uploads/courses/images', express.static(path.join(__dirname, 'uploads', 'courses', 'images')));
 
-// 🚨 Public Routes (no auth required)
+// Public Routes (no auth required)
 const { router: authRouter, authMiddleware } = require('./routes/auth');
 const messageRoutes = require('./routes/messages');
 
 app.use('/api/auth', authRouter);
 app.use('/api/messages', messageRoutes);
 
-// 🚨 CRITICAL FIX: ADD NOTIFICATION COUNTS ROUTE BEFORE COURSE-BY-ID ROUTE
+// COURSE RESULTS ROUTES - PUBLIC (for quiz submissions)
+
+// Submit course quiz results
+app.post('/api/course-results', async (req, res) => {
+  try {
+    console.log('📥 Course quiz submission received');
+    
+    const { 
+      answers, 
+      userId, 
+      userName, 
+      courseId, 
+      courseName, 
+      courseType = 'general',
+      score, 
+      maxScore, 
+      totalQuestions, 
+      percentage, 
+      timeTaken, 
+      remark,
+      questionSetId,
+      questionSetTitle,
+      questionSetType = 'general'
+    } = req.body;
+    
+    console.log('📊 Course quiz data:', {
+      userName,
+      courseName,
+      score,
+      totalQuestions,
+      percentage,
+      courseType
+    });
+
+    // Validate required fields
+    if (!userName || !courseName || score === undefined || !totalQuestions) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userName, courseName, score, and totalQuestions are required'
+      });
+    }
+
+    const CourseResult = require('./models/CourseResult');
+    
+    // Helper function to get remark based on percentage
+    const getRemark = (percent) => {
+      if (percent >= 90) return "Excellent";
+      if (percent >= 80) return "Very Good";
+      if (percent >= 70) return "Good";
+      if (percent >= 60) return "Satisfactory";
+      return "Needs Improvement";
+    };
+
+    // Create course result
+    const courseResult = new CourseResult({
+      userId: userId || 'anonymous',
+      userName: userName,
+      courseId: courseId || questionSetId || 'unknown-course',
+      courseName: courseName,
+      courseType: courseType,
+      score: score,
+      maxScore: maxScore || (totalQuestions * 5),
+      totalQuestions: totalQuestions,
+      percentage: percentage || Math.round((score / (maxScore || totalQuestions * 5)) * 100),
+      timeTaken: timeTaken || 0,
+      remark: remark || getRemark(percentage),
+      answers: answers || [],
+      questionSetId: questionSetId || 'unknown-set',
+      questionSetTitle: questionSetTitle || courseName,
+      questionSetType: questionSetType,
+      scoringSystem: '5_points_per_question'
+    });
+
+    await courseResult.save();
+
+    console.log(`✅ Course result saved: ${score}/${totalQuestions} (${courseResult.percentage}%) - ${courseResult.remark}`);
+
+    res.json({
+      success: true,
+      message: 'Course quiz results saved successfully',
+      resultId: courseResult._id,
+      result: courseResult,
+      collection: 'course_results'
+    });
+
+  } catch (error) {
+    console.error('❌ Error saving course results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error saving course results',
+      error: error.message
+    });
+  }
+});
+
+// Get course results for a specific user
+app.get('/api/course-results/user/:userName', async (req, res) => {
+  try {
+    const userName = req.params.userName;
+    console.log('📊 Fetching course results for user:', userName);
+    
+    const CourseResult = require('./models/CourseResult');
+    
+    const results = await CourseResult.find({ userName: userName })
+      .sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${results.length} course results for user ${userName}`);
+
+    res.json({
+      success: true,
+      results: results,
+      total: results.length,
+      collection: 'course_results'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching user course results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching course results',
+      error: error.message
+    });
+  }
+});
+
+// Get all course results (for admin)
+app.get('/api/course-results', async (req, res) => {
+  try {
+    console.log('📊 Admin fetching all course results');
+    
+    const CourseResult = require('./models/CourseResult');
+    
+    const results = await CourseResult.find()
+      .sort({ createdAt: -1 });
+
+    console.log(`✅ Admin found ${results.length} course results total`);
+
+    res.json({
+      success: true,
+      results: results,
+      total: results.length,
+      collection: 'course_results'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching all course results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching course results',
+      error: error.message
+    });
+  }
+});
+
+// Get course completion notifications count (for admin)
+app.get('/api/course-results/notifications/count', async (req, res) => {
+  try {
+    const CourseResult = require('./models/CourseResult');
+    
+    const unreadCount = await CourseResult.countDocuments({ 
+      readByAdmin: { $ne: true } 
+    });
+
+    console.log(`🔔 Course completion notifications count: ${unreadCount}`);
+
+    res.json({
+      success: true,
+      count: unreadCount,
+      message: 'Course completion notifications count retrieved'
+    });
+
+  } catch (error) {
+    console.error('❌ Error counting course completion notifications:', error);
+    res.json({
+      success: true,
+      count: 0
+    });
+  }
+});
+
+// Mark course results as read by admin
+app.put('/api/course-results/mark-read', async (req, res) => {
+  try {
+    const { resultIds } = req.body;
+    
+    const CourseResult = require('./models/CourseResult');
+    
+    let updateResult;
+    
+    if (resultIds && Array.isArray(resultIds) && resultIds.length > 0) {
+      // Mark specific results as read
+      updateResult = await CourseResult.updateMany(
+        { _id: { $in: resultIds } },
+        { 
+          $set: { 
+            readByAdmin: true, 
+            readAt: new Date() 
+          } 
+        }
+      );
+    } else {
+      // Mark all unread results as read
+      updateResult = await CourseResult.updateMany(
+        { readByAdmin: { $ne: true } },
+        { 
+          $set: { 
+            readByAdmin: true, 
+            readAt: new Date() 
+          } 
+        }
+      );
+    }
+
+    console.log(`✅ Marked ${updateResult.modifiedCount} course results as read`);
+
+    res.json({
+      success: true,
+      message: `Marked ${updateResult.modifiedCount} course results as read`,
+      modifiedCount: updateResult.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('❌ Error marking course results as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking course results as read',
+      error: error.message
+    });
+  }
+});
+
+// CRITICAL FIX: ADD NOTIFICATION COUNTS ROUTE BEFORE COURSE-BY-ID ROUTE
 app.get('/api/courses/notification-counts', async (req, res) => {
   try {
     console.log('🔔 Fetching course notification counts');
@@ -98,7 +329,7 @@ app.get('/api/courses/notification-counts', async (req, res) => {
   }
 });
 
-// 🚨 CRITICAL FIX: ADD ADMIN MESSAGES ROUTE
+// CRITICAL FIX: ADD ADMIN MESSAGES ROUTE
 app.get('/api/notifications/admin-messages/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
@@ -131,7 +362,7 @@ app.get('/api/notifications/admin-messages/:userId', async (req, res) => {
   }
 });
 
-// 🚨 ADD: Course viewing routes
+// ADD: Course viewing routes
 app.get('/api/courses/:id', async (req, res) => {
   try {
     const courseId = req.params.id;
@@ -173,7 +404,7 @@ app.get('/api/courses/:id', async (req, res) => {
   }
 });
 
-// 🚨 ADD: Get courses by type with pagination
+// ADD: Get courses by type with pagination
 app.get('/api/courses', async (req, res) => {
   try {
     const { type, page = 1, limit = 50 } = req.query;
@@ -228,7 +459,7 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
-// 🚨 ADD: Validate masterclass access route
+// ADD: Validate masterclass access route
 app.post('/api/courses/validate-masterclass-access', async (req, res) => {
   try {
     const { accessCode } = req.body;
@@ -261,7 +492,7 @@ app.post('/api/courses/validate-masterclass-access', async (req, res) => {
   }
 });
 
-// 🚨 ADD: Notification endpoint for quiz scores
+// ADD: Notification endpoint for quiz scores
 app.put('/api/notifications/mark-read', async (req, res) => {
   try {
     const { type, userId } = req.body;
@@ -293,7 +524,8 @@ app.get('/api/test', (req, res) => {
       quiz_questions: 'Exists (120 documents)',
       quiz_results: 'Exists (3 documents)',
       courses: 'Exists (6 documents)',
-      users: 'Exists (4 documents)'
+      users: 'Exists (4 documents)',
+      course_results: 'Exists (new collection)'
     }
   });
 });
@@ -309,8 +541,14 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/debug-routes', (req, res) => {
   const routes = [
+    // Course Results Routes
+    '/api/course-results',
+    '/api/course-results/user/:userName',
+    '/api/course-results/notifications/count',
+    '/api/course-results/mark-read',
+    
     '/api/courses/notification-counts',
-    '/api/notifications/admin-messages/:userId', // 🚨 ADDED THIS ROUTE
+    '/api/notifications/admin-messages/:userId',
     '/api/courses/:id',
     '/api/courses',
     '/api/courses/validate-masterclass-access',
@@ -456,7 +694,7 @@ app.get('/api/direct-courses/:id/view', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: Route to fetch general course questions
+// ADDED: Route to fetch general course questions
 app.get('/api/general-course-questions', async (req, res) => {
   try {
     console.log('📝 Fetching general course questions');
@@ -495,7 +733,7 @@ app.get('/api/general-course-questions', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: Route to fetch masterclass course questions
+// ADDED: Route to fetch masterclass course questions
 app.get('/api/masterclass-course-questions', async (req, res) => {
   try {
     console.log('📝 Fetching masterclass course questions');
@@ -534,7 +772,7 @@ app.get('/api/masterclass-course-questions', async (req, res) => {
   }
 });
 
-// 🚨 QUIZ ROUTES - FIXED: FILTER BY COURSE/DESTINATION
+// QUIZ ROUTES - FIXED: FILTER BY COURSE/DESTINATION
 app.get('/api/quiz/questions', async (req, res) => {
   try {
     const { courseId, destinationId, destination } = req.query;
@@ -550,7 +788,7 @@ app.get('/api/quiz/questions', async (req, res) => {
 
     const db = mongoose.connection.db;
     
-    // 🚨 FIX: Build query to filter by course/destination
+    // FIX: Build query to filter by course/destination
     let query = {};
     
     if (courseId && mongoose.Types.ObjectId.isValid(courseId)) {
@@ -600,7 +838,7 @@ app.get('/api/quiz/questions', async (req, res) => {
       });
     }
     
-    // 🚨 FIX: Include the correct answer index for frontend comparison
+    // FIX: Include the correct answer index for frontend comparison
     const formattedQuestions = questions.map(q => {
       // Find the index of the correct answer in the options array
       const correctIndex = q.options.findIndex(option => option === q.correctAnswer);
@@ -609,7 +847,7 @@ app.get('/api/quiz/questions', async (req, res) => {
         id: q._id,
         question: q.question,
         options: q.options || [],
-        correctAnswer: correctIndex, // 🚨 CRITICAL FIX: Send index instead of text
+        correctAnswer: correctIndex, // CRITICAL FIX: Send index instead of text
         explanation: q.explanation
       };
     });
@@ -632,7 +870,7 @@ app.get('/api/quiz/questions', async (req, res) => {
   }
 });
 
-// 🚨 QUIZ SUBMIT ROUTE - ORIGINAL
+// QUIZ SUBMIT ROUTE - ORIGINAL
 app.post('/api/quiz/submit', async (req, res) => {
   try {
     console.log('📥 Quiz submission received via /api/quiz/submit');
@@ -653,7 +891,7 @@ app.post('/api/quiz/submit', async (req, res) => {
     const questionResults = [];
 
     for (const answer of answers) {
-      // 🚨 FIX: Ensure we're checking questions from the correct course
+      // FIX: Ensure we're checking questions from the correct course
       const questionQuery = { 
         _id: new mongoose.Types.ObjectId(answer.questionId)
       };
@@ -668,7 +906,7 @@ app.post('/api/quiz/submit', async (req, res) => {
       const question = await db.collection('quiz_questions').findOne(questionQuery);
       
       if (question) {
-        // 🚨 FIX: Compare based on option indexes, not text
+        // FIX: Compare based on option indexes, not text
         const correctIndex = question.options.findIndex(option => option === question.correctAnswer);
         const isCorrect = correctIndex === answer.selectedAnswer;
         
@@ -678,8 +916,8 @@ app.post('/api/quiz/submit', async (req, res) => {
           questionId: answer.questionId,
           questionText: question.question,
           selectedAnswer: answer.selectedAnswer,
-          correctAnswer: correctIndex, // 🚨 Store index for frontend
-          correctAnswerText: question.correctAnswer, // 🚨 Keep text for explanation
+          correctAnswer: correctIndex, // Store index for frontend
+          correctAnswerText: question.correctAnswer, // Keep text for explanation
           isCorrect: isCorrect,
           options: question.options || [],
           explanation: question.explanation
@@ -712,7 +950,7 @@ app.post('/api/quiz/submit', async (req, res) => {
       totalQuestions: totalQuestions,
       percentage: percentage,
       resultId: quizResult._id,
-      answers: questionResults, // 🚨 Return detailed results for frontend display
+      answers: questionResults, // Return detailed results for frontend display
       collection: 'quiz_results'
     });
 
@@ -726,7 +964,7 @@ app.post('/api/quiz/submit', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: QUIZ SUBMIT ROUTE - COMPATIBILITY ROUTE (for frontend using /api/quiz/results)
+// ADDED: QUIZ SUBMIT ROUTE - COMPATIBILITY ROUTE (for frontend using /api/quiz/results)
 app.post('/api/quiz/results', async (req, res) => {
   try {
     console.log('📥 Quiz submission received via /api/quiz/results');
@@ -800,7 +1038,7 @@ app.post('/api/quiz/results', async (req, res) => {
     const finalPercentage = percentage || Math.round((calculatedScore / finalTotalQuestions) * 100);
     const finalTimeTaken = timeTaken || 0;
     
-    // 🚨 FIX: Determine remark if not provided
+    // FIX: Determine remark if not provided
     const getRemark = (percent) => {
       if (percent >= 80) return "Excellent";
       if (percent >= 60) return "Good";
@@ -810,7 +1048,7 @@ app.post('/api/quiz/results', async (req, res) => {
     
     const finalRemark = remark || getRemark(finalPercentage);
 
-    // 🚨 FIX: Create quiz result with ALL required fields
+    // FIX: Create quiz result with ALL required fields
     const quizResult = new QuizResult({
       userId: userId,
       userName: userName,
@@ -857,7 +1095,7 @@ app.post('/api/quiz/results', async (req, res) => {
   }
 });
 
-// 🚨 FIXED: Quiz results route - REMOVED .select('-answers') to include question breakdown
+// FIXED: Quiz results route - REMOVED .select('-answers') to include question breakdown
 app.get('/api/quiz/results', async (req, res) => {
   try {
     const userId = req.query.userId;
@@ -871,7 +1109,7 @@ app.get('/api/quiz/results', async (req, res) => {
 
     const QuizResult = require('./models/QuizResult');
     
-    // 🚨 CRITICAL FIX: REMOVED .select('-answers') to INCLUDE detailed answers
+    // CRITICAL FIX: REMOVED .select('-answers') to INCLUDE detailed answers
     const results = await QuizResult.find({ userId: userId })
       .sort({ submittedAt: -1 });
 
@@ -894,7 +1132,7 @@ app.get('/api/quiz/results', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: ADMIN QUIZ RESULTS ROUTE
+// ADDED: ADMIN QUIZ RESULTS ROUTE
 app.get('/api/quiz/results/admin', async (req, res) => {
   try {
     console.log('📊 Admin fetching all quiz results');
@@ -912,7 +1150,7 @@ app.get('/api/quiz/results/admin', async (req, res) => {
       success: true,
       results: results,
       total: results.length,
-      totalCount: results.length, // 🚨 ADDED: For frontend compatibility
+      totalCount: results.length, // ADDED: For frontend compatibility
       collection: 'quiz_results',
       message: 'Admin quiz results retrieved successfully'
     });
@@ -1016,7 +1254,7 @@ app.get('/api/notifications/counts', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: MARK ADMIN MESSAGES AS READ ROUTE
+// ADDED: MARK ADMIN MESSAGES AS READ ROUTE
 app.put('/api/notifications/mark-admin-messages-read', authMiddleware, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -1058,14 +1296,14 @@ app.put('/api/notifications/mark-admin-messages-read', authMiddleware, async (re
   }
 });
 
-// 🚨 ADDED: MARK READ ENDPOINT FOR ADMIN
+// ADDED: MARK READ ENDPOINT FOR ADMIN
 app.put('/api/quiz/results/mark-read', async (req, res) => {
   try {
     const { resultIds } = req.body;
     
     console.log(`🔔 Marking quiz results as read:`, resultIds);
     
-    // 🚨 FIX: Make resultIds optional - if not provided, mark all as read
+    // FIX: Make resultIds optional - if not provided, mark all as read
     if (!resultIds || !Array.isArray(resultIds) || resultIds.length === 0) {
       console.log('⚠️ No specific resultIds provided, marking all results as read');
       
@@ -1113,7 +1351,7 @@ app.put('/api/quiz/results/mark-read', async (req, res) => {
 // All routes after this middleware will require authentication
 app.use(authMiddleware);
 
-// 🚨 ADDED: COURSE MANAGEMENT ROUTES - MOVED AFTER AUTH MIDDLEWARE
+// ADDED: COURSE MANAGEMENT ROUTES - MOVED AFTER AUTH MIDDLEWARE
 // Admin routes for question upload
 app.post('/api/admin/upload-general-questions', async (req, res) => {
   try {
@@ -1301,14 +1539,14 @@ app.put('/api/admin/mark-course-completed-read', async (req, res) => {
   }
 });
 
-// 🚨 Authenticated Routes
+// Authenticated Routes
 const courseRoutes = require('./routes/courses');
 const adminRoutes = require('./routes/admin');
 
 app.use('/api', courseRoutes);
 app.use('/api', adminRoutes);
 
-// 🚨 DEBUG ROUTE - Add this to test messages
+// DEBUG ROUTE - Add this to test messages
 app.get('/api/debug/messages-sent', async (req, res) => {
   try {
     console.log('🐛 DEBUG: Testing messages/sent route');
@@ -1337,7 +1575,7 @@ app.get('/api/debug/messages-sent', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: DEBUG AUTH TEST ROUTE
+// ADDED: DEBUG AUTH TEST ROUTE
 app.get('/api/debug/auth-test', async (req, res) => {
   try {
     console.log('🐛 DEBUG: Testing authentication...');
@@ -1374,7 +1612,7 @@ app.get('/api/debug/auth-test', async (req, res) => {
   }
 });
 
-// 🚨 QUIZ COLLECTION DEBUG ROUTE
+// QUIZ COLLECTION DEBUG ROUTE
 app.get('/api/debug/quiz-collections', async (req, res) => {
   try {
     console.log('🐛 DEBUG: Checking quiz collections...');
@@ -1394,6 +1632,7 @@ app.get('/api/debug/quiz-collections', async (req, res) => {
     // Check quiz_questions collection
     const quizQuestionsCount = await db.collection('quiz_questions').countDocuments();
     const quizResultsCount = await db.collection('quiz_results').countDocuments();
+    const courseResultsCount = await db.collection('course_results').countDocuments();
     
     // Sample questions
     const sampleQuestions = await db.collection('quiz_questions').find().limit(2).toArray();
@@ -1411,6 +1650,10 @@ app.get('/api/debug/quiz-collections', async (req, res) => {
           exists: collectionNames.includes('quiz_results'),
           documentCount: quizResultsCount
         },
+        course_results: {
+          exists: collectionNames.includes('course_results'),
+          documentCount: courseResultsCount
+        },
         questions: {
           exists: collectionNames.includes('questions'),
           documentCount: await db.collection('questions').countDocuments().catch(() => 0)
@@ -1424,7 +1667,7 @@ app.get('/api/debug/quiz-collections', async (req, res) => {
   }
 });
 
-// 🚨 ADDED: DEBUG ROUTE TO CHECK QUESTIONS BY DESTINATION
+// ADDED: DEBUG ROUTE TO CHECK QUESTIONS BY DESTINATION
 app.get('/api/debug/quiz-by-destination', async (req, res) => {
   try {
     const db = mongoose.connection.db;
@@ -1472,7 +1715,7 @@ app.get('/api/debug/quiz-by-destination', async (req, res) => {
   }
 });
 
-// 🚨 IMPROVED MONGODB CONNECTION WITH RETRY LOGIC
+// IMPROVED MONGODB CONNECTION WITH RETRY LOGIC
 const connectWithRetry = async (retries = 5, delay = 5000) => {
   console.log('🔄 Attempting to connect to MongoDB...');
   
@@ -1540,7 +1783,7 @@ const initializeDatabase = async () => {
   }
 };
 
-// 🚨 DATABASE CONNECTION MIDDLEWARE
+// DATABASE CONNECTION MIDDLEWARE
 const requireDatabase = (req, res, next) => {
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({
@@ -1555,7 +1798,7 @@ console.log('🔄 Loading routes...');
 
 console.log('✅ Routes loaded successfully');
 
-// 🚨 ENHANCED ERROR HANDLING
+// ENHANCED ERROR HANDLING
 app.use((error, req, res, next) => {
   console.error('💥 Server error:', {
     message: error.message,
@@ -1589,7 +1832,7 @@ app.use('*', (req, res) => {
   });
 });
 
-// 🚨 START SERVER WITH DATABASE CONNECTION
+// START SERVER WITH DATABASE CONNECTION
 const startServer = async () => {
   const PORT = process.env.PORT || 5000;
   
@@ -1599,9 +1842,15 @@ const startServer = async () => {
       console.log(`\n🎉 Server running on port ${PORT}`);
       console.log(`📍 API available at: http://localhost:${PORT}/api`);
       console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`📍 Course Results Routes:`);
+      console.log(`📍   Submit course results: http://localhost:${PORT}/api/course-results`);
+      console.log(`📍   Get user results: http://localhost:${PORT}/api/course-results/user/:userName`);
+      console.log(`📍   Get all results (admin): http://localhost:${PORT}/api/course-results`);
+      console.log(`📍   Notifications count: http://localhost:${PORT}/api/course-results/notifications/count`);
+      console.log(`📍   Mark as read: http://localhost:${PORT}/api/course-results/mark-read`);
       console.log(`📍 Course routes:`);
       console.log(`📍   Notification counts: http://localhost:${PORT}/api/courses/notification-counts`);
-      console.log(`📍   Admin messages: http://localhost:${PORT}/api/notifications/admin-messages/:userId`); // 🚨 ADDED
+      console.log(`📍   Admin messages: http://localhost:${PORT}/api/notifications/admin-messages/:userId`);
       console.log(`📍   Get courses: http://localhost:${PORT}/api/courses`);
       console.log(`📍   Get course by ID: http://localhost:${PORT}/api/courses/:id`);
       console.log(`📍   Validate masterclass: http://localhost:${PORT}/api/courses/validate-masterclass-access`);
@@ -1631,7 +1880,7 @@ const startServer = async () => {
       console.log(`📍 Mark notifications read: http://localhost:${PORT}/api/notifications/mark-read`);
       console.log('\n📊 Enhanced logging enabled - all requests will be logged');
       console.log('🎯 Quiz system using: quiz_questions (120 docs) and quiz_results (3 docs) collections');
-      console.log('📚 Course management: general_course_questions, masterclass_course_questions collections');
+      console.log('📚 Course management: course_results (new), general_course_questions, masterclass_course_questions collections');
     });
 
     // Attempt database connection in background
@@ -1666,5 +1915,5 @@ const startServer = async () => {
   }
 };
 
-// 🚀 START THE SERVER
+// START THE SERVER
 startServer();

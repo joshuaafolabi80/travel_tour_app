@@ -1,4 +1,3 @@
-// src/components/CourseAndRemarks.jsx
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
@@ -6,7 +5,7 @@ const CourseAndRemarks = () => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredResults, setFilteredResults] = useState([]);
   const [selectedResult, setSelectedResult] = useState(null);
@@ -14,31 +13,57 @@ const CourseAndRemarks = () => {
 
   useEffect(() => {
     fetchResults();
-  }, [activeTab]);
+  }, []);
 
   useEffect(() => {
     filterResults();
-  }, [results, searchTerm]);
+  }, [results, searchTerm, activeTab]);
 
   const fetchResults = async () => {
     try {
       setLoading(true);
       setError('');
       
-      const endpoint = activeTab === 'general' 
-        ? '/user/general-course-results'
-        : '/user/masterclass-course-results';
-
-      const response = await api.get(endpoint);
+      // Get current user info - FIXED: Use the correct field that matches what's stored in the database
+      const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+      
+      // CRITICAL FIX: Try multiple possible fields to find the correct user name
+      const userName = userData.name || userData.userName || userData.username || 'Unknown User';
+      
+      console.log('📊 Fetching course results for user:', userName);
+      console.log('🔍 Available user data from localStorage:', userData);
+      
+      // DEBUG: Test the API endpoint directly
+      console.log('🔧 Testing API endpoint with user:', userName);
+      
+      const response = await api.get(`/course-results/user/${encodeURIComponent(userName)}`);
       
       if (response.data.success) {
         setResults(response.data.results);
+        console.log(`✅ Loaded ${response.data.results.length} course results`);
+        console.log('📋 Results data:', response.data.results);
+        
+        // DEBUG: If no results, try fetching all results to see what's in the database
+        if (response.data.results.length === 0) {
+          console.log('🔍 No results found for user, checking all results in database...');
+          try {
+            const allResultsResponse = await api.get('/course-results');
+            if (allResultsResponse.data.success) {
+              console.log('📊 All results in database:', allResultsResponse.data.results);
+              console.log('👤 All usernames in database:', allResultsResponse.data.results.map(r => r.userName));
+            }
+          } catch (debugError) {
+            console.error('❌ Debug error fetching all results:', debugError);
+          }
+        }
       } else {
-        setError('Failed to load results');
+        setError('Failed to load course results');
+        console.log('❌ API response indicated failure');
       }
     } catch (error) {
-      console.error('Error fetching results:', error);
-      setError('Failed to load results. Please try again later.');
+      console.error('❌ Error fetching course results:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      setError('Failed to load course results. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -47,11 +72,19 @@ const CourseAndRemarks = () => {
   const filterResults = () => {
     let filtered = results;
     
+    // Filter by tab
+    if (activeTab === 'general') {
+      filtered = filtered.filter(result => result.courseType === 'general');
+    } else if (activeTab === 'masterclass') {
+      filtered = filtered.filter(result => result.courseType === 'masterclass');
+    }
+    
+    // Filter by search term
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(result =>
         result.courseName?.toLowerCase().includes(term) ||
-        result.userName?.toLowerCase().includes(term) ||
+        result.questionSetTitle?.toLowerCase().includes(term) ||
         result.remark?.toLowerCase().includes(term)
       );
     }
@@ -65,10 +98,19 @@ const CourseAndRemarks = () => {
   };
 
   const getPerformanceColor = (percentage) => {
-    if (percentage >= 80) return 'success';
-    if (percentage >= 60) return 'primary';
-    if (percentage >= 40) return 'warning';
+    if (percentage >= 90) return 'success';
+    if (percentage >= 80) return 'primary';
+    if (percentage >= 70) return 'info';
+    if (percentage >= 60) return 'warning';
     return 'danger';
+  };
+
+  const getPerformanceText = (percentage) => {
+    if (percentage >= 90) return 'Excellent';
+    if (percentage >= 80) return 'Very Good';
+    if (percentage >= 70) return 'Good';
+    if (percentage >= 60) return 'Satisfactory';
+    return 'Needs Improvement';
   };
 
   const formatDate = (dateString) => {
@@ -79,6 +121,13 @@ const CourseAndRemarks = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const formatTimeTaken = (seconds) => {
+    if (!seconds) return 'N/A';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   if (loading) {
@@ -92,6 +141,7 @@ const CourseAndRemarks = () => {
                   <span className="visually-hidden">Loading...</span>
                 </div>
                 <h4 className="text-primary">Loading Course Results...</h4>
+                <p className="text-muted">Please wait while we fetch your results</p>
               </div>
             </div>
           </div>
@@ -110,6 +160,7 @@ const CourseAndRemarks = () => {
               <h4>Error Loading Results</h4>
               <p>{error}</p>
               <button className="btn btn-primary" onClick={fetchResults}>
+                <i className="fas fa-refresh me-2"></i>
                 Try Again
               </button>
             </div>
@@ -131,7 +182,7 @@ const CourseAndRemarks = () => {
                   <div className="col-md-8">
                     <h1 className="display-5 fw-bold mb-2">
                       <i className="fas fa-graduation-cap me-3"></i>
-                      Course and Remarks
+                      Course Results & Remarks
                     </h1>
                     <p className="lead mb-0 opacity-75">
                       Track your course completion and performance remarks
@@ -157,10 +208,18 @@ const CourseAndRemarks = () => {
                 <ul className="nav nav-tabs nav-justified">
                   <li className="nav-item">
                     <button
+                      className={`nav-link ${activeTab === 'all' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('all')}
+                    >
+                      <i className="fas fa-list me-2"></i>All Results
+                    </button>
+                  </li>
+                  <li className="nav-item">
+                    <button
                       className={`nav-link ${activeTab === 'general' ? 'active' : ''}`}
                       onClick={() => setActiveTab('general')}
                     >
-                      <i className="fas fa-book me-2"></i>General Course Results
+                      <i className="fas fa-book me-2"></i>General Courses
                     </button>
                   </li>
                   <li className="nav-item">
@@ -168,7 +227,7 @@ const CourseAndRemarks = () => {
                       className={`nav-link ${activeTab === 'masterclass' ? 'active' : ''}`}
                       onClick={() => setActiveTab('masterclass')}
                     >
-                      <i className="fas fa-crown me-2"></i>Masterclass Course Results
+                      <i className="fas fa-crown me-2"></i>Masterclass Courses
                     </button>
                   </li>
                 </ul>
@@ -185,7 +244,8 @@ const CourseAndRemarks = () => {
                 <div className="row align-items-center">
                   <div className="col-md-6">
                     <h5 className="mb-0">
-                      {activeTab === 'general' ? 'General' : 'Masterclass'} Course Results
+                      {activeTab === 'all' ? 'All' : activeTab === 'general' ? 'General' : 'Masterclass'} Course Results
+                      <span className="badge bg-primary ms-2">{filteredResults.length}</span>
                     </h5>
                   </div>
                   <div className="col-md-6">
@@ -196,7 +256,7 @@ const CourseAndRemarks = () => {
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Search by course name, your name, or remark..."
+                        placeholder="Search by course name or remark..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                       />
@@ -211,10 +271,19 @@ const CourseAndRemarks = () => {
                     <h5 className="text-muted">No Results Found</h5>
                     <p className="text-muted">
                       {results.length === 0 
-                        ? `You haven't completed any ${activeTab === 'general' ? 'general' : 'masterclass'} courses yet.`
+                        ? "You haven't completed any courses yet. Complete a course quiz to see your results here!"
                         : 'No results match your search criteria.'
                       }
                     </p>
+                    {results.length === 0 && (
+                      <button 
+                        className="btn btn-primary mt-3"
+                        onClick={() => window.location.href = '/general-courses'}
+                      >
+                        <i className="fas fa-play-circle me-2"></i>
+                        Start a Course
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="table-responsive">
@@ -222,10 +291,11 @@ const CourseAndRemarks = () => {
                       <thead className="table-light">
                         <tr>
                           <th>Course Name</th>
-                          <th>Your Name</th>
+                          <th>Course Type</th>
                           <th className="text-center">Score</th>
                           <th className="text-center">Percentage</th>
-                          <th className="text-center">Remark</th>
+                          <th className="text-center">Performance</th>
+                          <th className="text-center">Time Taken</th>
                           <th className="text-center">Date Completed</th>
                           <th className="text-center">Actions</th>
                         </tr>
@@ -235,11 +305,23 @@ const CourseAndRemarks = () => {
                           <tr key={result._id}>
                             <td>
                               <strong>{result.courseName}</strong>
+                              {result.questionSetTitle && result.questionSetTitle !== result.courseName && (
+                                <br />
+                              )}
+                              {result.questionSetTitle && result.questionSetTitle !== result.courseName && (
+                                <small className="text-muted">{result.questionSetTitle}</small>
+                              )}
                             </td>
-                            <td>{result.userName}</td>
+                            <td>
+                              <span className={`badge ${
+                                result.courseType === 'general' ? 'bg-info' : 'bg-warning'
+                              }`}>
+                                {result.courseType}
+                              </span>
+                            </td>
                             <td className="text-center">
-                              <span className="badge bg-info fs-6">
-                                {result.score}/{result.totalQuestions}
+                              <span className="badge bg-secondary fs-6">
+                                {result.score}/{result.maxScore}
                               </span>
                             </td>
                             <td className="text-center">
@@ -253,12 +335,16 @@ const CourseAndRemarks = () => {
                               </span>
                             </td>
                             <td className="text-center">
-                              <small>{formatDate(result.date)}</small>
+                              <small>{formatTimeTaken(result.timeTaken)}</small>
+                            </td>
+                            <td className="text-center">
+                              <small>{formatDate(result.createdAt)}</small>
                             </td>
                             <td className="text-center">
                               <button
                                 className="btn btn-outline-primary btn-sm"
                                 onClick={() => viewDetails(result)}
+                                title="View detailed results"
                               >
                                 <i className="fas fa-eye me-1"></i>Details
                               </button>
@@ -292,7 +378,7 @@ const CourseAndRemarks = () => {
                 ></button>
               </div>
               <div className="modal-body">
-                <div className="row">
+                <div className="row mb-4">
                   <div className="col-md-6">
                     <h6>Course Information</h6>
                     <ul className="list-group list-group-flush">
@@ -301,34 +387,62 @@ const CourseAndRemarks = () => {
                         <strong>{selectedResult.courseName}</strong>
                       </li>
                       <li className="list-group-item d-flex justify-content-between">
-                        <span>Your Name:</span>
-                        <strong>{selectedResult.userName}</strong>
+                        <span>Course Type:</span>
+                        <strong>
+                          <span className={`badge ${
+                            selectedResult.courseType === 'general' ? 'bg-info' : 'bg-warning'
+                          }`}>
+                            {selectedResult.courseType}
+                          </span>
+                        </strong>
                       </li>
                       <li className="list-group-item d-flex justify-content-between">
-                        <span>Date Completed:</span>
-                        <strong>{formatDate(selectedResult.date)}</strong>
+                        <span>Question Set:</span>
+                        <strong>{selectedResult.questionSetTitle}</strong>
                       </li>
                     </ul>
                   </div>
                   <div className="col-md-6">
                     <h6>Performance Summary</h6>
-                    <div className="text-center p-3 bg-light rounded">
-                      <div className="display-4 fw-bold text-primary">{selectedResult.percentage}%</div>
-                      <div className={`badge bg-${getPerformanceColor(selectedResult.percentage)} fs-6 mt-2`}>
-                        {selectedResult.remark}
-                      </div>
-                      <div className="mt-3">
+                    <ul className="list-group list-group-flush">
+                      <li className="list-group-item d-flex justify-content-between">
+                        <span>Date Completed:</span>
+                        <strong>{formatDate(selectedResult.createdAt)}</strong>
+                      </li>
+                      <li className="list-group-item d-flex justify-content-between">
+                        <span>Time Taken:</span>
+                        <strong>{formatTimeTaken(selectedResult.timeTaken)}</strong>
+                      </li>
+                      <li className="list-group-item d-flex justify-content-between">
+                        <span>Scoring System:</span>
+                        <strong>{selectedResult.scoringSystem}</strong>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="row mb-4">
+                  <div className="col-12">
+                    <div className="card bg-light">
+                      <div className="card-body text-center">
                         <div className="row">
-                          <div className="col-6">
-                            <strong>Score:</strong><br />
-                            {selectedResult.score}/{selectedResult.totalQuestions}
+                          <div className="col-md-3">
+                            <h3 className="text-primary">{selectedResult.percentage}%</h3>
+                            <p className="mb-0">Overall Score</p>
                           </div>
-                          <div className="col-6">
-                            <strong>Time Taken:</strong><br />
-                            {selectedResult.timeTaken ? 
-                              `${Math.floor(selectedResult.timeTaken / 60)}:${(selectedResult.timeTaken % 60).toString().padStart(2, '0')}` 
-                              : 'N/A'
-                            }
+                          <div className="col-md-3">
+                            <h3 className="text-info">{selectedResult.score}/{selectedResult.maxScore}</h3>
+                            <p className="mb-0">Points Earned</p>
+                          </div>
+                          <div className="col-md-3">
+                            <h3 className="text-success">{selectedResult.totalQuestions}</h3>
+                            <p className="mb-0">Total Questions</p>
+                          </div>
+                          <div className="col-md-3">
+                            <h3 className={`text-${getPerformanceColor(selectedResult.percentage)}`}>
+                              {selectedResult.remark}
+                            </h3>
+                            <p className="mb-0">Performance</p>
                           </div>
                         </div>
                       </div>
@@ -339,42 +453,44 @@ const CourseAndRemarks = () => {
                 {selectedResult.answers && selectedResult.answers.length > 0 && (
                   <>
                     <hr />
-                    <h6>Question Breakdown</h6>
-                    <div className="question-breakdown" style={{maxHeight: '300px', overflowY: 'auto'}}>
+                    <h6>Detailed Question Breakdown</h6>
+                    <div className="question-breakdown" style={{maxHeight: '400px', overflowY: 'auto'}}>
                       {selectedResult.answers.map((answer, index) => (
-                        <div key={index} className={`card mb-2 ${answer.isCorrect ? 'border-success' : 'border-danger'}`}>
-                          <div className="card-body py-2">
-                            <div className="d-flex justify-content-between align-items-start">
-                              <div className="flex-grow-1">
-                                <h6 className="mb-1">Q{index + 1}: {answer.questionText}</h6>
-                                <div className="row">
-                                  <div className="col-md-6">
-                                    <small className="text-muted">Your Answer:</small>
-                                    <div className={`p-1 rounded ${answer.isCorrect ? 'bg-success text-white' : 'bg-danger text-white'}`}>
-                                      {answer.selectedAnswer}
-                                    </div>
-                                  </div>
-                                  <div className="col-md-6">
-                                    <small className="text-muted">Correct Answer:</small>
-                                    <div className="p-1 rounded bg-success text-white">
-                                      {answer.correctAnswerText}
-                                    </div>
-                                  </div>
+                        <div key={index} className={`card mb-3 ${answer.isCorrect ? 'border-success' : 'border-danger'}`}>
+                          <div className="card-body">
+                            <div className="d-flex justify-content-between align-items-start mb-2">
+                              <h6 className="mb-0">Q{index + 1}: {answer.questionText}</h6>
+                              <span className={`badge ${answer.isCorrect ? 'bg-success' : 'bg-danger'}`}>
+                                {answer.isCorrect ? 'Correct' : 'Incorrect'}
+                              </span>
+                            </div>
+                            <div className="row">
+                              <div className="col-md-6">
+                                <small className="text-muted">Your Answer:</small>
+                                <div className={`p-2 rounded ${answer.isCorrect ? 'bg-success text-white' : 'bg-danger text-white'}`}>
+                                  {answer.selectedAnswer}
                                 </div>
-                                {answer.explanation && (
-                                  <div className="mt-2">
-                                    <small className="text-muted">Explanation:</small>
-                                    <div className="p-2 bg-light rounded small">
-                                      {answer.explanation}
-                                    </div>
-                                  </div>
-                                )}
                               </div>
-                              <div className="ms-3">
-                                <span className={`badge ${answer.isCorrect ? 'bg-success' : 'bg-danger'}`}>
-                                  {answer.isCorrect ? 'Correct' : 'Incorrect'}
-                                </span>
+                              <div className="col-md-6">
+                                <small className="text-muted">Correct Answer:</small>
+                                <div className="p-2 rounded bg-success text-white">
+                                  {answer.correctAnswerText}
+                                </div>
                               </div>
+                            </div>
+                            {answer.explanation && (
+                              <div className="mt-2">
+                                <small className="text-muted">Explanation:</small>
+                                <div className="p-2 bg-light rounded small">
+                                  {answer.explanation}
+                                </div>
+                              </div>
+                            )}
+                            <div className="mt-2">
+                              <small className="text-muted">Points: </small>
+                              <span className={`badge ${answer.isCorrect ? 'bg-success' : 'bg-secondary'}`}>
+                                {answer.points || 0} points
+                              </span>
                             </div>
                           </div>
                         </div>

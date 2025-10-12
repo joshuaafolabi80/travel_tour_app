@@ -1,4 +1,4 @@
-// src/components/GeneralCourses.jsx - FIXED VERSION WITHOUT ROUTER
+// src/components/GeneralCourses.jsx - FIXED VERSION
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
@@ -92,18 +92,21 @@ const GeneralCourses = ({ navigateTo }) => {
       type: 'general',
       title: questionSet.title,
       description: questionSet.description,
-      questions: questionSet.questions
+      questions: questionSet.questions,
+      courseType: 'general'
     };
     
     localStorage.setItem('currentQuestionSet', JSON.stringify(questionSetData));
     console.log('💾 Question set stored in localStorage');
     
-    // 🚨 FIXED: Navigate to general-quiz-attempt instead of quiz-platform
+    // 🚨 CRITICAL FIX: Navigate to general-quiz-attempt
     if (navigateTo) {
+      console.log('📍 Navigating to: general-quiz-attempt');
       navigateTo('general-quiz-attempt');
     }
   };
 
+  // ... rest of the component remains the same
   const viewCourse = async (courseId) => {
     try {
       console.log('🎯 Viewing course:', courseId);
