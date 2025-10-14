@@ -1,4 +1,4 @@
-// src/components/QuizScores.jsx - COMPLETE FIXED VERSION
+// src/components/QuizScores.jsx - COMPLETE UPDATED VERSION WITH ENHANCED WATERMARK
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
@@ -26,7 +26,12 @@ const QuizScores = () => {
   const [alertMessage, setAlertMessage] = useState('');
   const [alertType, setAlertType] = useState('success');
 
-  // 🚨 FIX: Get user data properly
+  // Toast notification states
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
+  // Get user data properly
   const [userData, setUserData] = useState(null);
 
   useEffect(() => {
@@ -50,13 +55,23 @@ const QuizScores = () => {
     }, 3000);
   };
 
-  // 🚨 FIXED: Fetch quiz results with detailed answers
+  const showToastNotification = (message, type = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+    
+    setTimeout(() => {
+      setShowToast(false);
+    }, 4000);
+  };
+
+  // Fetch quiz results with detailed answers - USING YOUR EXISTING API STRUCTURE
   const fetchQuizResults = async (userData = null) => {
     try {
       setLoading(true);
       setError('');
       
-      // 🚨 FIX: Get user data properly
+      // Get user data properly
       const currentUserData = userData || JSON.parse(localStorage.getItem('userData') || '{}');
       const userName = currentUserData.name || currentUserData.userName || currentUserData.email;
       const userId = currentUserData._id || currentUserData.id;
@@ -73,7 +88,7 @@ const QuizScores = () => {
         return;
       }
 
-      // 🚨 FIX: Use the correct endpoint and handle different response structures
+      // Use the correct endpoint and handle different response structures
       const response = await api.get('/quiz/results', {
         params: { userId }
       });
@@ -85,9 +100,9 @@ const QuizScores = () => {
         
         console.log(`✅ Found ${results.length} quiz results`);
         
-        // 🚨 FIX: Ensure results have the required fields with detailed answers
+        // Ensure results have the required fields with detailed answers
         const formattedResults = results.map(result => {
-          // 🚨 CRITICAL FIX: Ensure answers have proper structure
+          // CRITICAL FIX: Ensure answers have proper structure
           const formattedAnswers = (result.answers || []).map(answer => ({
             questionId: answer.questionId || answer._id,
             question: answer.question || answer.questionText || 'Question not available',
@@ -108,14 +123,14 @@ const QuizScores = () => {
             date: result.date || result.submittedAt || result.createdAt,
             timeTaken: result.timeTaken || 0,
             remark: result.remark || getRemark(result.percentage || 0),
-            answers: formattedAnswers, // 🚨 Use formatted answers
+            answers: formattedAnswers, // Use formatted answers
             status: result.status || 'completed'
           };
         });
         
         setQuizResults(formattedResults);
         
-        // 🚨 FIX: Mark notifications as read when user views their quiz scores
+        // Mark notifications as read when user views their quiz scores
         await markQuizNotificationsAsRead(userId);
         
         console.log('✅ Quiz results loaded successfully with detailed answers');
@@ -127,7 +142,7 @@ const QuizScores = () => {
     } catch (error) {
       console.error('❌ Error fetching quiz results:', error);
       
-      // 🚨 FIX: Provide more specific error messages
+      // Provide more specific error messages
       if (error.response?.status === 404) {
         setError('Quiz results endpoint not found. Please contact support.');
       } else if (error.response?.status === 500) {
@@ -144,7 +159,7 @@ const QuizScores = () => {
     }
   };
 
-  // 🚨 FIX: Enhanced notifications marking
+  // Enhanced notifications marking
   const markQuizNotificationsAsRead = async (userId) => {
     try {
       console.log('🔔 Marking quiz notifications as read for user:', userId);
@@ -182,7 +197,7 @@ const QuizScores = () => {
     }
   };
 
-  // 🚨 FIX: Helper function to get performance remark
+  // Helper function to get performance remark
   const getRemark = (percentage) => {
     if (percentage >= 80) return "Excellent";
     if (percentage >= 60) return "Good";
@@ -366,159 +381,492 @@ const QuizScores = () => {
     generateCertificate(result);
   };
 
+  // UPDATED CERTIFICATE GENERATION WITH ENHANCED WATERMARK VISIBILITY
   const generateCertificate = (result) => {
-    const certificateContent = `
-      <html>
+    try {
+      // Safe data extraction with fallbacks
+      const certificateName = (userData?.name && userData.name !== 'Student' ? userData.name : (result.userName || 'Valued Participant')) || 'Valued Participant';
+      const courseName = result.destination || 'Course Completion';
+      const completionDate = result.date ? new Date(result.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'a recent date';
+      const percentageScore = result.percentage || 0;
+      const isPassed = percentageScore >= 60;
+      const badgeText = isPassed ? 'CERTIFICATE OF ACHIEVEMENT' : 'CERTIFICATE OF PARTICIPATION';
+      const primaryColor = '#ff6f00';
+      const secondaryColor = '#1a237e';
+      
+      // Safe filename generation
+      const safeCertificateName = (certificateName || 'Student').replace(/\s/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeCourseName = (courseName || 'Course').replace(/\s/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+      const fileName = `${safeCertificateName}_${safeCourseName}_Certificate.pdf`;
+
+      // Certificate HTML Content with Cloudinary Logo and ENHANCED WATERMARK
+      const certificateContent = `
+        <!DOCTYPE html>
+        <html>
         <head>
-          <title>Certificate of Achievement - ${result.destination}</title>
-          <style>
-            body { 
-              font-family: 'Times New Roman', serif; 
-              margin: 0; 
-              padding: 0; 
-              background: linear-gradient(45deg, #f9f9f9, #ffffff);
-            }
-            .certificate-container {
-              width: 800px;
-              height: 600px;
-              margin: 20px auto;
-              border: 20px solid #ff6f00;
-              background: white;
-              position: relative;
-              box-shadow: 0 0 20px rgba(0,0,0,0.1);
-            }
-            .certificate-header {
-              text-align: center;
-              padding: 30px 0;
-              background: #1a237e;
-              color: white;
-            }
-            .certificate-body {
-              padding: 40px;
-              text-align: center;
-            }
-            .certificate-title {
-              font-size: 36px;
-              color: #1a237e;
-              margin-bottom: 20px;
-            }
-            .certificate-text {
-              font-size: 18px;
-              line-height: 1.6;
-              margin-bottom: 30px;
-            }
-            .student-name {
-              font-size: 32px;
-              color: #ff6f00;
-              font-weight: bold;
-              margin: 20px 0;
-              border-bottom: 2px solid #ff6f00;
-              padding-bottom: 10px;
-              display: inline-block;
-            }
-            .course-info {
-              font-size: 20px;
-              color: #333;
-              margin-bottom: 20px;
-            }
-            .performance {
-              font-size: 24px;
-              color: #28a745;
-              font-weight: bold;
-            }
-            .certificate-footer {
-              position: absolute;
-              bottom: 30px;
-              left: 0;
-              right: 0;
-              display: flex;
-              justify-content: space-around;
-            }
-            .signature {
-              text-align: center;
-            }
-            .signature-line {
-              width: 200px;
-              border-top: 1px solid #333;
-              margin: 0 auto;
-            }
-            .watermark {
-              position: absolute;
-              opacity: 0.1;
-              font-size: 120px;
-              transform: rotate(-45deg);
-              top: 200px;
-              left: 100px;
-              color: #ff6f00;
-            }
-            @media print {
-              body { margin: 0; }
-              .no-print { display: none; }
-            }
-          </style>
+            <title>${badgeText} - ${courseName}</title>
+            <style>
+                @page { 
+                    size: A4 landscape;
+                    margin: 0;
+                }
+                body { 
+                    margin: 0; 
+                    padding: 0; 
+                    background: #fff;
+                    font-family: 'Times New Roman', Times, serif; 
+                    position: relative;
+                }
+                .certificate-container {
+                    width: 297mm;
+                    height: 210mm;
+                    box-sizing: border-box;
+                    border: 20px solid ${secondaryColor};
+                    padding: 20px;
+                    position: relative;
+                    overflow: hidden;
+                }
+                .inner-border {
+                    border: 5px solid ${primaryColor};
+                    width: 100%;
+                    height: 100%;
+                    box-sizing: border-box;
+                    padding: 30px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    position: relative;
+                }
+                
+                /* Watermark Styles - ENHANCED VISIBILITY */
+                .watermark {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: transparent;
+                    pointer-events: none;
+                    z-index: 1;
+                    opacity: 0.15; /* INCREASED FROM 0.1 to 0.15 */
+                }
+                .watermark-text {
+                    position: absolute;
+                    font-size: 140px; /* INCREASED SIZE */
+                    font-weight: 900; /* BOLDER */
+                    color: #e0e0e0; /* LIGHTER GRAY FOR BETTER VISIBILITY */
+                    transform: rotate(-45deg);
+                    white-space: nowrap;
+                    top: 40%;
+                    left: -20%;
+                    width: 140%;
+                    text-align: center;
+                    font-family: 'Arial', sans-serif;
+                    letter-spacing: 12px; /* INCREASED SPACING */
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.1); /* ADDED SHADOW FOR DEPTH */
+                }
+                
+                /* Logo Styles - ADJUSTED TO PREVENT OVERLAP */
+                .logo-container {
+                    position: absolute;
+                    top: 20px; /* MOVED HIGHER */
+                    left: 2px; /* MOVED MORE TO THE LEFT */
+                    z-index: 2;
+                    text-align: center;
+                }
+                .academy-logo {
+                    width: 80px; /* REDUCED SIZE */
+                    height: 80px; /* REDUCED SIZE */
+                    object-fit: contain;
+                    margin-bottom: 5px;
+                    border-radius: 8px;
+                }
+                .logo-text {
+                    font-size: 12px; /* SMALLER TEXT */
+                    font-weight: bold;
+                    color: ${secondaryColor};
+                    margin: 0;
+                    font-family: 'Arial', sans-serif;
+                }
+                
+                .title {
+                    color: ${secondaryColor};
+                    font-size: 36pt; 
+                    font-weight: bold;
+                    margin-top: 30px; /* ADDED TOP MARGIN TO PREVENT OVERLAP */
+                    margin-bottom: 10pt;
+                    position: relative;
+                    z-index: 2;
+                }
+                .subtitle {
+                    color: ${primaryColor};
+                    font-size: 20pt; 
+                    margin-bottom: 20pt;
+                    text-transform: uppercase;
+                    position: relative;
+                    z-index: 2;
+                }
+                .award-text {
+                    font-size: 16pt;
+                    color: #333;
+                    margin-bottom: 10pt;
+                    position: relative;
+                    z-index: 2;
+                }
+                .name {
+                    font-size: 40pt; 
+                    color: ${primaryColor};
+                    font-family: 'Brush Script MT', cursive;
+                    margin: 10pt 0 20pt 0;
+                    border-bottom: 3px solid ${secondaryColor};
+                    padding-bottom: 5pt;
+                    line-height: 1.2;
+                    position: relative;
+                    z-index: 2;
+                }
+                .course-text {
+                    font-size: 20pt;
+                    color: #333;
+                    margin-bottom: 30pt;
+                    text-align: center;
+                    max-width: 80%;
+                    position: relative;
+                    z-index: 2;
+                }
+                .score-badge {
+                    background-color: ${primaryColor};
+                    color: white;
+                    padding: 10pt 20pt;
+                    border-radius: 5pt;
+                    font-size: 18pt;
+                    font-weight: bold;
+                    margin-bottom: 30pt;
+                    position: relative;
+                    z-index: 2;
+                }
+                .signature-section {
+                    display: flex;
+                    justify-content: space-around;
+                    width: 80%;
+                    margin-top: 40pt;
+                    text-align: center;
+                    position: relative;
+                    z-index: 2;
+                }
+                .signature-item {
+                    border-top: 1px solid #000;
+                    padding-top: 5pt;
+                    width: 40%;
+                    font-size: 12pt;
+                }
+                
+                /* Print media queries */
+                @media print {
+                    .certificate-container {
+                        border: none !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        width: 100% !important;
+                        height: 100% !important;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .inner-border {
+                        border: 10px solid ${secondaryColor} !important;
+                        border-width: 20px;
+                    }
+                    .watermark {
+                        opacity: 0.12 !important; /* SLIGHTLY REDUCED FOR PRINT */
+                    }
+                }
+
+                /* Button styles */
+                .no-print {
+                  text-align: center;
+                  margin: 20px 0;
+                }
+                .btn-group {
+                  display: flex;
+                  gap: 12px;
+                  justify-content: center;
+                  flex-wrap: wrap;
+                }
+                .btn {
+                  padding: 10px 20px;
+                  border: none;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  font-size: 14px;
+                  font-weight: 600;
+                  transition: all 0.3s ease;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  min-width: 150px;
+                }
+                .btn-primary {
+                  background: #ff6f00;
+                  color: white;
+                }
+                .btn-secondary {
+                  background: #6c757d;
+                  color: white;
+                }
+                .btn-success {
+                  background: #28a745;
+                  color: white;
+                }
+                .btn:hover {
+                  opacity: 0.9;
+                  transform: translateY(-2px);
+                }
+            </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+            <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+            <script>
+              function generatePDF() {
+                  const element = document.getElementById('certificate-to-download');
+                  
+                  if (!element) {
+                      showToast('Certificate element not found', 'error');
+                      return;
+                  }
+
+                  document.body.style.padding = '0';
+                  document.body.style.margin = '0';
+
+                  // Wait for images to load
+                  const images = element.getElementsByTagName('img');
+                  let imagesLoaded = 0;
+                  const totalImages = images.length;
+
+                  if (totalImages === 0) {
+                      captureAndDownload();
+                      return;
+                  }
+
+                  Array.from(images).forEach(img => {
+                      if (img.complete) {
+                          imagesLoaded++;
+                      } else {
+                          img.onload = () => {
+                              imagesLoaded++;
+                              if (imagesLoaded === totalImages) {
+                                  captureAndDownload();
+                              }
+                          };
+                          img.onerror = () => {
+                              imagesLoaded++;
+                              if (imagesLoaded === totalImages) {
+                                  captureAndDownload();
+                              }
+                          };
+                      }
+                  });
+
+                  function captureAndDownload() {
+                      html2canvas(element, { 
+                        scale: 3,
+                        logging: true,
+                        useCORS: true,
+                        width: element.offsetWidth,
+                        height: element.offsetHeight
+                      }).then(canvas => {
+                          const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                          const pdf = new window.jspdf.jsPDF({
+                              orientation: 'l',
+                              unit: 'mm',
+                              format: 'a4'
+                          });
+                          
+                          const width = pdf.internal.pageSize.getWidth();
+                          const height = pdf.internal.pageSize.getHeight();
+                          
+                          pdf.addImage(imgData, 'JPEG', 0, 0, width, height);
+                          pdf.save("${fileName}");
+                          
+                          showToast('Certificate downloaded successfully!', 'success');
+                          
+                          setTimeout(() => window.close(), 100);
+                      }).catch(err => {
+                          console.error("Error generating PDF:", err);
+                          showToast('Failed to download PDF. Please try printing manually.', 'error');
+                      });
+                  }
+
+                  // Fallback in case images don't load
+                  setTimeout(captureAndDownload, 3000);
+              }
+
+              function showToast(message, type = 'success') {
+                const toastContainer = document.getElementById('toastContainer');
+                const toastId = 'toast-' + Date.now();
+                
+                const toastHTML = \`
+                  <div id="\${toastId}" class="custom-toast \${type === 'error' ? 'error' : ''}">
+                    <div class="toast-content">
+                      <i class="fas \${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+                      <span>\${message}</span>
+                      <button class="toast-close" onclick="this.parentElement.parentElement.remove()">
+                        <i class="fas fa-times"></i>
+                      </button>
+                    </div>
+                  </div>
+                \`;
+                
+                if (!toastContainer) {
+                  const container = document.createElement('div');
+                  container.id = 'toastContainer';
+                  container.className = 'toast-container';
+                  document.body.appendChild(container);
+                }
+                
+                document.getElementById('toastContainer').insertAdjacentHTML('beforeend', toastHTML);
+                
+                setTimeout(() => {
+                  const toast = document.getElementById(toastId);
+                  if (toast) {
+                    toast.remove();
+                  }
+                }, 4000);
+              }
+
+              window.onload = function() {
+                  setTimeout(generatePDF, 1000);
+              };
+            </script>
+            <style>
+              .toast-container {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+              }
+              .custom-toast {
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                border-left: 4px solid #28a745;
+                animation: slideInRight 0.3s ease-out;
+                min-width: 300px;
+                max-width: 400px;
+                margin-bottom: 10px;
+              }
+              .custom-toast.error {
+                border-left-color: #dc3545;
+              }
+              .toast-content {
+                display: flex;
+                align-items: center;
+                padding: 16px 20px;
+              }
+              .toast-content i:first-child {
+                margin-right: 12px;
+                font-size: 20px;
+                color: #28a745;
+              }
+              .custom-toast.error .toast-content i:first-child {
+                color: #dc3545;
+              }
+              .toast-close {
+                background: none;
+                border: none;
+                color: #6c757d;
+                cursor: pointer;
+                margin-left: auto;
+                padding: 4px;
+                opacity: 0.7;
+              }
+              @keyframes slideInRight {
+                from {
+                  transform: translateX(100%);
+                  opacity: 0;
+                }
+                to {
+                  transform: translateX(0);
+                  opacity: 1;
+                }
+              }
+            </style>
         </head>
         <body>
-          <div class="certificate-container">
-            <div class="watermark">THE CONCLAVE ACADEMY</div>
-            
-            <div class="certificate-header">
-              <h1>CERTIFICATE OF ACHIEVEMENT</h1>
-            </div>
-            
-            <div class="certificate-body">
-              <div class="certificate-title">This Certificate is Proudly Presented to</div>
-              
-              <div class="student-name">${result.userName}</div>
-              
-              <div class="certificate-text">
-                for successfully completing the ${result.destination} course and demonstrating 
-                exceptional knowledge and skills in the assessment.
-              </div>
-              
-              <div class="course-info">
-                <strong>Course:</strong> ${result.destination}<br>
-                <strong>Date Completed:</strong> ${result.date ? new Date(result.date).toLocaleDateString() : 'N/A'}<br>
-                <strong>Score Achieved:</strong> ${result.percentage}%<br>
-                <strong>Performance:</strong> <span class="performance">${result.remark}</span>
-              </div>
-              
-              <div class="certificate-text">
-                This certificate acknowledges the dedication and effort demonstrated in mastering the course material.
-              </div>
-            </div>
-            
-            <div class="certificate-footer">
-              <div class="signature">
-                <div class="signature-line"></div>
-                <div>Director</div>
-                <div>The Conclave Academy</div>
-              </div>
-              
-              <div class="signature">
-                <div class="signature-line"></div>
-                <div>Date</div>
-                <div>${new Date().toLocaleDateString()}</div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="no-print" style="text-align: center; margin-top: 20px;">
-            <button onclick="window.print()" style="padding: 10px 20px; background: #ff6f00; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">
-              Print Certificate
-            </button>
-            <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer;">
-              Close
-            </button>
-          </div>
-        </body>
-      </html>
-    `;
+            <div id="toastContainer" class="toast-container"></div>
 
-    const certificateWindow = window.open('', '_blank');
-    certificateWindow.document.write(certificateContent);
-    certificateWindow.document.close();
-    
-    showCustomAlert('Certificate generated successfully!', 'success');
+            <div id="certificate-to-download" class="certificate-container">
+                <!-- ENHANCED WATERMARK -->
+                <div class="watermark">
+                    <div class="watermark-text">THE CONCLAVE ACADEMY</div>
+                </div>
+                
+                <div class="inner-border">
+                    <!-- Logo Container with Cloudinary URL -->
+                    <div class="logo-container">
+                        <img src="https://res.cloudinary.com/dnc3s4u7q/image/upload/v1760389693/conclave_logo_ygplob.jpg" alt="The Conclave Academy Logo" class="academy-logo">
+                        <p class="logo-text">THE CONCLAVE ACADEMY</p>
+                    </div>
+
+                    <p class="title">${badgeText}</p>
+                    <p class="award-text">is proudly presented to</p>
+                    
+                    <h1 class="name">${certificateName}</h1>
+                    
+                    <p class="award-text">For successfully completing the course</p>
+                    
+                    <h2 class="course-text">"${courseName}"</h2>
+                    
+                    <div class="score-badge">
+                        Achieved Score: ${percentageScore}%
+                    </div>
+
+                    <p class="award-text" style="margin-top: -10pt;">on ${completionDate}</p>
+
+                    <div class="signature-section">
+                        <div class="signature-item">
+                            <p style="font-weight: bold;">Director</p>
+                            <p>The Conclave Academy</p>
+                        </div>
+                        <div class="signature-item">
+                            <p style="font-weight: bold;">Date</p>
+                            <p>${new Date().toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="no-print">
+              <div class="btn-group">
+                <button onclick="generatePDF()" class="btn btn-success" id="download-btn">
+                  <i class="fas fa-download"></i>Download PDF
+                </button>
+                <button onclick="window.print()" class="btn btn-primary">
+                  <i class="fas fa-print"></i>Print Certificate
+                </button>
+                <button onclick="window.close()" class="btn btn-secondary">
+                  <i class="fas fa-times"></i>Close
+                </button>
+              </div>
+            </div>
+        </body>
+        </html>
+      `;
+
+      const certificateWindow = window.open('', '_blank');
+      if (!certificateWindow) {
+        showCustomAlert('Please allow pop-ups to download certificates.', 'warning');
+        return;
+      }
+      
+      certificateWindow.document.write(certificateContent);
+      certificateWindow.document.close();
+      
+      showToastNotification('Certificate generated successfully! Download will start automatically.', 'success');
+      
+    } catch (error) {
+      console.error('❌ Error generating certificate:', error);
+      showCustomAlert('Failed to generate certificate. Please try again.', 'error');
+    }
   };
 
   const clearFilters = () => {
@@ -586,7 +934,7 @@ const QuizScores = () => {
     }
   };
 
-  // 🚨 FIX: Enhanced detailed answer display
+  // Enhanced detailed answer display
   const renderQuestionBreakdown = (answers) => {
     if (!answers || answers.length === 0) {
       return (
@@ -738,6 +1086,21 @@ const QuizScores = () => {
             >
               <i className="fas fa-times"></i>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {showToast && (
+        <div className={`position-fixed top-0 end-0 p-3`} style={{zIndex: 9999}}>
+          <div className={`toast show align-items-center text-white bg-${toastType === 'success' ? 'success' : 'danger'} border-0`} role="alert">
+            <div className="d-flex">
+              <div className="toast-body">
+                <i className={`fas ${toastType === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2`}></i>
+                {toastMessage}
+              </div>
+              <button type="button" className="btn-close btn-close-white me-2 m-auto" onClick={() => setShowToast(false)}></button>
+            </div>
           </div>
         </div>
       )}

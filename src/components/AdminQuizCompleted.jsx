@@ -1,4 +1,3 @@
-// src/components/AdminQuizCompleted.jsx
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
@@ -31,6 +30,11 @@ const AdminQuizCompleted = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const [alertType, setAlertType] = useState('success');
+
+  // Toast notification states
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
 
   // NEW: Navigation state for profile and messaging
   const [navigation, setNavigation] = useState({
@@ -75,6 +79,16 @@ const AdminQuizCompleted = () => {
     setTimeout(() => {
       setShowAlert(false);
     }, 3000);
+  };
+
+  const showToastNotification = (message, type = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+    
+    setTimeout(() => {
+      setShowToast(false);
+    }, 4000);
   };
 
   const fetchQuizResults = async () => {
@@ -150,6 +164,499 @@ const AdminQuizCompleted = () => {
     });
     
     showCustomAlert(`Preparing message to ${result.userName}...`, 'info');
+  };
+
+  // NEW: Download certificate function with enhanced watermark
+  const downloadCertificate = (result) => {
+    generateCertificate(result);
+  };
+
+  // NEW: Certificate generation with enhanced watermark visibility
+  const generateCertificate = (result) => {
+    try {
+      // Safe data extraction with fallbacks
+      const certificateName = result.userName || 'Valued Participant';
+      const courseName = result.destination || 'Course Completion';
+      const completionDate = result.date ? new Date(result.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'a recent date';
+      const percentageScore = result.percentage || 0;
+      const isPassed = percentageScore >= 60;
+      const badgeText = isPassed ? 'CERTIFICATE OF ACHIEVEMENT' : 'CERTIFICATE OF PARTICIPATION';
+      const primaryColor = '#ff6f00';
+      const secondaryColor = '#1a237e';
+      
+      // Safe filename generation
+      const safeCertificateName = (certificateName || 'Student').replace(/\s/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+      const safeCourseName = (courseName || 'Course').replace(/\s/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+      const fileName = `${safeCertificateName}_${safeCourseName}_Certificate.pdf`;
+
+      // Certificate HTML Content with Cloudinary Logo and ENHANCED WATERMARK
+      const certificateContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>${badgeText} - ${courseName}</title>
+            <style>
+                @page { 
+                    size: A4 landscape;
+                    margin: 0;
+                }
+                body { 
+                    margin: 0; 
+                    padding: 0; 
+                    background: #fff;
+                    font-family: 'Times New Roman', Times, serif; 
+                    position: relative;
+                }
+                .certificate-container {
+                    width: 297mm;
+                    height: 210mm;
+                    box-sizing: border-box;
+                    border: 20px solid ${secondaryColor};
+                    padding: 20px;
+                    position: relative;
+                    overflow: hidden;
+                }
+                .inner-border {
+                    border: 5px solid ${primaryColor};
+                    width: 100%;
+                    height: 100%;
+                    box-sizing: border-box;
+                    padding: 30px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    position: relative;
+                }
+                
+                /* Watermark Styles - ENHANCED VISIBILITY */
+                .watermark {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: transparent;
+                    pointer-events: none;
+                    z-index: 1;
+                    opacity: 0.15; /* INCREASED FROM 0.1 to 0.15 */
+                }
+                .watermark-text {
+                    position: absolute;
+                    font-size: 140px; /* INCREASED SIZE */
+                    font-weight: 900; /* BOLDER */
+                    color: #e0e0e0; /* LIGHTER GRAY FOR BETTER VISIBILITY */
+                    transform: rotate(-45deg);
+                    white-space: nowrap;
+                    top: 40%;
+                    left: -20%;
+                    width: 140%;
+                    text-align: center;
+                    font-family: 'Arial', sans-serif;
+                    letter-spacing: 12px; /* INCREASED SPACING */
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.1); /* ADDED SHADOW FOR DEPTH */
+                }
+                
+                /* Logo Styles - ADJUSTED TO PREVENT OVERLAP */
+                .logo-container {
+                    position: absolute;
+                    top: 20px; /* MOVED HIGHER */
+                    left: 2px; /* MOVED MORE TO THE LEFT */
+                    z-index: 2;
+                    text-align: center;
+                }
+                .academy-logo {
+                    width: 80px; /* REDUCED SIZE */
+                    height: 80px; /* REDUCED SIZE */
+                    object-fit: contain;
+                    margin-bottom: 5px;
+                    border-radius: 8px;
+                }
+                .logo-text {
+                    font-size: 12px; /* SMALLER TEXT */
+                    font-weight: bold;
+                    color: ${secondaryColor};
+                    margin: 0;
+                    font-family: 'Arial', sans-serif;
+                }
+                
+                .title {
+                    color: ${secondaryColor};
+                    font-size: 36pt; 
+                    font-weight: bold;
+                    margin-top: 30px; /* ADDED TOP MARGIN TO PREVENT OVERLAP */
+                    margin-bottom: 10pt;
+                    position: relative;
+                    z-index: 2;
+                }
+                .subtitle {
+                    color: ${primaryColor};
+                    font-size: 20pt; 
+                    margin-bottom: 20pt;
+                    text-transform: uppercase;
+                    position: relative;
+                    z-index: 2;
+                }
+                .award-text {
+                    font-size: 16pt;
+                    color: #333;
+                    margin-bottom: 10pt;
+                    position: relative;
+                    z-index: 2;
+                }
+                .name {
+                    font-size: 40pt; 
+                    color: ${primaryColor};
+                    font-family: 'Brush Script MT', cursive;
+                    margin: 10pt 0 20pt 0;
+                    border-bottom: 3px solid ${secondaryColor};
+                    padding-bottom: 5pt;
+                    line-height: 1.2;
+                    position: relative;
+                    z-index: 2;
+                }
+                .course-text {
+                    font-size: 20pt;
+                    color: #333;
+                    margin-bottom: 30pt;
+                    text-align: center;
+                    max-width: 80%;
+                    position: relative;
+                    z-index: 2;
+                }
+                .score-badge {
+                    background-color: ${primaryColor};
+                    color: white;
+                    padding: 10pt 20pt;
+                    border-radius: 5pt;
+                    font-size: 18pt;
+                    font-weight: bold;
+                    margin-bottom: 30pt;
+                    position: relative;
+                    z-index: 2;
+                }
+                .signature-section {
+                    display: flex;
+                    justify-content: space-around;
+                    width: 80%;
+                    margin-top: 40pt;
+                    text-align: center;
+                    position: relative;
+                    z-index: 2;
+                }
+                .signature-item {
+                    border-top: 1px solid #000;
+                    padding-top: 5pt;
+                    width: 40%;
+                    font-size: 12pt;
+                }
+                
+                /* Print media queries */
+                @media print {
+                    .certificate-container {
+                        border: none !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        width: 100% !important;
+                        height: 100% !important;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .inner-border {
+                        border: 10px solid ${secondaryColor} !important;
+                        border-width: 20px;
+                    }
+                    .watermark {
+                        opacity: 0.12 !important; /* SLIGHTLY REDUCED FOR PRINT */
+                    }
+                }
+
+                /* Button styles */
+                .no-print {
+                  text-align: center;
+                  margin: 20px 0;
+                }
+                .btn-group {
+                  display: flex;
+                  gap: 12px;
+                  justify-content: center;
+                  flex-wrap: wrap;
+                }
+                .btn {
+                  padding: 10px 20px;
+                  border: none;
+                  border-radius: 6px;
+                  cursor: pointer;
+                  font-size: 14px;
+                  font-weight: 600;
+                  transition: all 0.3s ease;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  min-width: 150px;
+                }
+                .btn-primary {
+                  background: #ff6f00;
+                  color: white;
+                }
+                .btn-secondary {
+                  background: #6c757d;
+                  color: white;
+                }
+                .btn-success {
+                  background: #28a745;
+                  color: white;
+                }
+                .btn:hover {
+                  opacity: 0.9;
+                  transform: translateY(-2px);
+                }
+            </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+            <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+            <script>
+              function generatePDF() {
+                  const element = document.getElementById('certificate-to-download');
+                  
+                  if (!element) {
+                      showToast('Certificate element not found', 'error');
+                      return;
+                  }
+
+                  document.body.style.padding = '0';
+                  document.body.style.margin = '0';
+
+                  // Wait for images to load
+                  const images = element.getElementsByTagName('img');
+                  let imagesLoaded = 0;
+                  const totalImages = images.length;
+
+                  if (totalImages === 0) {
+                      captureAndDownload();
+                      return;
+                  }
+
+                  Array.from(images).forEach(img => {
+                      if (img.complete) {
+                          imagesLoaded++;
+                      } else {
+                          img.onload = () => {
+                              imagesLoaded++;
+                              if (imagesLoaded === totalImages) {
+                                  captureAndDownload();
+                              }
+                          };
+                          img.onerror = () => {
+                              imagesLoaded++;
+                              if (imagesLoaded === totalImages) {
+                                  captureAndDownload();
+                              }
+                          };
+                      }
+                  });
+
+                  function captureAndDownload() {
+                      html2canvas(element, { 
+                        scale: 3,
+                        logging: true,
+                        useCORS: true,
+                        width: element.offsetWidth,
+                        height: element.offsetHeight
+                      }).then(canvas => {
+                          const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                          const pdf = new window.jspdf.jsPDF({
+                              orientation: 'l',
+                              unit: 'mm',
+                              format: 'a4'
+                          });
+                          
+                          const width = pdf.internal.pageSize.getWidth();
+                          const height = pdf.internal.pageSize.getHeight();
+                          
+                          pdf.addImage(imgData, 'JPEG', 0, 0, width, height);
+                          pdf.save("${fileName}");
+                          
+                          showToast('Certificate downloaded successfully!', 'success');
+                          
+                          setTimeout(() => window.close(), 100);
+                      }).catch(err => {
+                          console.error("Error generating PDF:", err);
+                          showToast('Failed to download PDF. Please try printing manually.', 'error');
+                      });
+                  }
+
+                  // Fallback in case images don't load
+                  setTimeout(captureAndDownload, 3000);
+              }
+
+              function showToast(message, type = 'success') {
+                const toastContainer = document.getElementById('toastContainer');
+                const toastId = 'toast-' + Date.now();
+                
+                const toastHTML = \`
+                  <div id="\${toastId}" class="custom-toast \${type === 'error' ? 'error' : ''}">
+                    <div class="toast-content">
+                      <i class="fas \${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+                      <span>\${message}</span>
+                      <button class="toast-close" onclick="this.parentElement.parentElement.remove()">
+                        <i class="fas fa-times"></i>
+                      </button>
+                    </div>
+                  </div>
+                \`;
+                
+                if (!toastContainer) {
+                  const container = document.createElement('div');
+                  container.id = 'toastContainer';
+                  container.className = 'toast-container';
+                  document.body.appendChild(container);
+                }
+                
+                document.getElementById('toastContainer').insertAdjacentHTML('beforeend', toastHTML);
+                
+                setTimeout(() => {
+                  const toast = document.getElementById(toastId);
+                  if (toast) {
+                    toast.remove();
+                  }
+                }, 4000);
+              }
+
+              window.onload = function() {
+                  setTimeout(generatePDF, 1000);
+              };
+            </script>
+            <style>
+              .toast-container {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+              }
+              .custom-toast {
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                border-left: 4px solid #28a745;
+                animation: slideInRight 0.3s ease-out;
+                min-width: 300px;
+                max-width: 400px;
+                margin-bottom: 10px;
+              }
+              .custom-toast.error {
+                border-left-color: #dc3545;
+              }
+              .toast-content {
+                display: flex;
+                align-items: center;
+                padding: 16px 20px;
+              }
+              .toast-content i:first-child {
+                margin-right: 12px;
+                font-size: 20px;
+                color: #28a745;
+              }
+              .custom-toast.error .toast-content i:first-child {
+                color: #dc3545;
+              }
+              .toast-close {
+                background: none;
+                border: none;
+                color: #6c757d;
+                cursor: pointer;
+                margin-left: auto;
+                padding: 4px;
+                opacity: 0.7;
+              }
+              @keyframes slideInRight {
+                from {
+                  transform: translateX(100%);
+                  opacity: 0;
+                }
+                to {
+                  transform: translateX(0);
+                  opacity: 1;
+                }
+              }
+            </style>
+        </head>
+        <body>
+            <div id="toastContainer" class="toast-container"></div>
+
+            <div id="certificate-to-download" class="certificate-container">
+                <!-- ENHANCED WATERMARK -->
+                <div class="watermark">
+                    <div class="watermark-text">THE CONCLAVE ACADEMY</div>
+                </div>
+                
+                <div class="inner-border">
+                    <!-- Logo Container with Cloudinary URL -->
+                    <div class="logo-container">
+                        <img src="https://res.cloudinary.com/dnc3s4u7q/image/upload/v1760389693/conclave_logo_ygplob.jpg" alt="The Conclave Academy Logo" class="academy-logo">
+                        <p class="logo-text">THE CONCLAVE ACADEMY</p>
+                    </div>
+
+                    <p class="title">${badgeText}</p>
+                    <p class="award-text">is proudly presented to</p>
+                    
+                    <h1 class="name">${certificateName}</h1>
+                    
+                    <p class="award-text">For successfully completing the course</p>
+                    
+                    <h2 class="course-text">"${courseName}"</h2>
+                    
+                    <div class="score-badge">
+                        Achieved Score: ${percentageScore}%
+                    </div>
+
+                    <p class="award-text" style="margin-top: -10pt;">on ${completionDate}</p>
+
+                    <div class="signature-section">
+                        <div class="signature-item">
+                            <p style="font-weight: bold;">Director</p>
+                            <p>The Conclave Academy</p>
+                        </div>
+                        <div class="signature-item">
+                            <p style="font-weight: bold;">Date</p>
+                            <p>${new Date().toLocaleDateString()}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="no-print">
+              <div class="btn-group">
+                <button onclick="generatePDF()" class="btn btn-success" id="download-btn">
+                  <i class="fas fa-download"></i>Download PDF
+                </button>
+                <button onclick="window.print()" class="btn btn-primary">
+                  <i class="fas fa-print"></i>Print Certificate
+                </button>
+                <button onclick="window.close()" class="btn btn-secondary">
+                  <i class="fas fa-times"></i>Close
+                </button>
+              </div>
+            </div>
+        </body>
+        </html>
+      `;
+
+      const certificateWindow = window.open('', '_blank');
+      if (!certificateWindow) {
+        showCustomAlert('Please allow pop-ups to download certificates.', 'warning');
+        return;
+      }
+      
+      certificateWindow.document.write(certificateContent);
+      certificateWindow.document.close();
+      
+      showToastNotification('Certificate generated successfully! Download will start automatically.', 'success');
+      
+    } catch (error) {
+      console.error('❌ Error generating certificate:', error);
+      showCustomAlert('Failed to generate certificate. Please try again.', 'error');
+    }
   };
 
   // Rest of your existing functions remain the same...
@@ -546,6 +1053,21 @@ const AdminQuizCompleted = () => {
         </div>
       )}
 
+      {/* Toast Notification */}
+      {showToast && (
+        <div className={`position-fixed top-0 end-0 p-3`} style={{zIndex: 9999}}>
+          <div className={`toast show align-items-center text-white bg-${toastType === 'success' ? 'success' : 'danger'} border-0`} role="alert">
+            <div className="d-flex">
+              <div className="toast-body">
+                <i className={`fas ${toastType === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2`}></i>
+                {toastMessage}
+              </div>
+              <button type="button" className="btn-close btn-close-white me-2 m-auto" onClick={() => setShowToast(false)}></button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="container-fluid py-4">
         {/* Header Section */}
         <div className="row mb-4">
@@ -920,13 +1442,20 @@ const AdminQuizCompleted = () => {
                                       </button>
                                       <button 
                                         className="btn btn-outline-success btn-sm"
+                                        onClick={() => downloadCertificate(result)}
+                                        title="Download Certificate"
+                                      >
+                                        <i className="fas fa-download"></i>
+                                      </button>
+                                      <button 
+                                        className="btn btn-outline-info btn-sm"
                                         onClick={() => handleSendMessage(result)}
                                         title="Message Student"
                                       >
                                         <i className="fas fa-envelope"></i>
                                       </button>
                                       <button 
-                                        className="btn btn-outline-info btn-sm"
+                                        className="btn btn-outline-secondary btn-sm"
                                         onClick={() => handleViewProfile(result)}
                                         title="Student Profile"
                                       >

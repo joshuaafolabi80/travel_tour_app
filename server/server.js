@@ -37,6 +37,144 @@ const messageRoutes = require('./routes/messages');
 app.use('/api/auth', authRouter);
 app.use('/api/messages', messageRoutes);
 
+// ADDED: API ENDPOINTS FOR CERTIFICATE ENHANCEMENT
+// Get user by email
+app.get('/api/users/email/:email', async (req, res) => {
+  try {
+    const email = req.params.email;
+    console.log('🔍 Fetching user by email:', email);
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    const user = await db.collection('users').findOne({ email: email });
+    
+    if (!user) {
+      console.log('❌ User not found for email:', email);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Return only necessary fields for security
+    const { _id, username, email: userEmail, name, role } = user;
+    console.log('✅ User found:', username);
+    
+    res.json({
+      success: true,
+      user: { _id, username, email: userEmail, name, role }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user by email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user details',
+      error: error.message
+    });
+  }
+});
+
+// ADDED: Get user by username for admin certificate enhancement
+app.get('/api/users/username/:username', async (req, res) => {
+  try {
+    const username = req.params.username;
+    console.log('🔍 Admin fetching user by username:', username);
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    const user = await db.collection('users').findOne({ username: username });
+    
+    if (!user) {
+      console.log('❌ User not found for username:', username);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Return only necessary fields for security
+    const { _id, username: userUsername, email, name, role } = user;
+    console.log('✅ User found by username:', userUsername);
+    
+    res.json({
+      success: true,
+      user: { _id, username: userUsername, email, name, role }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user by username:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user details',
+      error: error.message
+    });
+  }
+});
+
+// Get course details from general_course_questions collection
+app.get('/api/courses/general/details', async (req, res) => {
+  try {
+    const { courseName } = req.query;
+    
+    console.log('🔍 Fetching course details for:', courseName);
+    
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database temporarily unavailable'
+      });
+    }
+
+    const db = mongoose.connection.db;
+    
+    // Search in general_course_questions collection
+    const course = await db.collection('general_course_questions').findOne({ 
+      $or: [
+        { title: { $regex: courseName, $options: 'i' } },
+        { description: { $regex: courseName, $options: 'i' } }
+      ]
+    });
+    
+    console.log('📊 Course search result:', course ? 'Found' : 'Not found');
+    
+    if (!course) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Course not found in general_course_questions' 
+      });
+    }
+    
+    // Return course details
+    res.json({ 
+      success: true, 
+      course: { 
+        _id: course._id,
+        title: course.title,
+        description: course.description,
+        courseType: course.courseType
+      } 
+    });
+  } catch (error) {
+    console.error('❌ Error fetching course details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching course details',
+      error: error.message
+    });
+  }
+});
+
 // COURSE RESULTS ROUTES - PUBLIC (for quiz submissions)
 
 // Submit course quiz results
@@ -525,7 +663,8 @@ app.get('/api/test', (req, res) => {
       quiz_results: 'Exists (3 documents)',
       courses: 'Exists (6 documents)',
       users: 'Exists (4 documents)',
-      course_results: 'Exists (new collection)'
+      course_results: 'Exists (new collection)',
+      general_course_questions: 'Exists (2 documents)'
     }
   });
 });
@@ -541,6 +680,11 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/debug-routes', (req, res) => {
   const routes = [
+    // NEW ENDPOINTS FOR CERTIFICATE ENHANCEMENT
+    '/api/users/email/:email',
+    '/api/users/username/:username',
+    '/api/courses/general/details',
+    
     // Course Results Routes
     '/api/course-results',
     '/api/course-results/user/:userName',
@@ -1842,25 +1986,30 @@ const startServer = async () => {
       console.log(`\n🎉 Server running on port ${PORT}`);
       console.log(`📍 API available at: http://localhost:${PORT}/api`);
       console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
-      console.log(`📍 Course Results Routes:`);
+      console.log(`\n🎓 ENHANCED CERTIFICATE ENDPOINTS:`);
+      console.log(`📍   Get user by email: http://localhost:${PORT}/api/users/email/:email`);
+      console.log(`📍   Get user by username: http://localhost:${PORT}/api/users/username/:username`);
+      console.log(`📍   Get course details: http://localhost:${PORT}/api/courses/general/details`);
+      console.log(`\n📊 Course Results Routes:`);
       console.log(`📍   Submit course results: http://localhost:${PORT}/api/course-results`);
       console.log(`📍   Get user results: http://localhost:${PORT}/api/course-results/user/:userName`);
       console.log(`📍   Get all results (admin): http://localhost:${PORT}/api/course-results`);
       console.log(`📍   Notifications count: http://localhost:${PORT}/api/course-results/notifications/count`);
       console.log(`📍   Mark as read: http://localhost:${PORT}/api/course-results/mark-read`);
-      console.log(`📍 Course routes:`);
+      console.log(`\n📚 Course routes:`);
       console.log(`📍   Notification counts: http://localhost:${PORT}/api/courses/notification-counts`);
       console.log(`📍   Admin messages: http://localhost:${PORT}/api/notifications/admin-messages/:userId`);
       console.log(`📍   Get courses: http://localhost:${PORT}/api/courses`);
       console.log(`📍   Get course by ID: http://localhost:${PORT}/api/courses/:id`);
       console.log(`📍   Validate masterclass: http://localhost:${PORT}/api/courses/validate-masterclass-access`);
       console.log(`📍   Direct course view: http://localhost:${PORT}/api/direct-courses/:id/view`);
-      console.log(`📍 Quiz questions: http://localhost:${PORT}/api/quiz/questions`);
-      console.log(`📍 Quiz submit (route 1): http://localhost:${PORT}/api/quiz/submit`);
-      console.log(`📍 Quiz submit (route 2): http://localhost:${PORT}/api/quiz/results`);
-      console.log(`📍 Quiz results admin: http://localhost:${PORT}/api/quiz/results/admin`);
-      console.log(`📍 Mark quiz read: http://localhost:${PORT}/api/quiz/results/mark-read`);
-      console.log(`📍 Course management routes:`);
+      console.log(`\n❓ Quiz routes:`);
+      console.log(`📍   Quiz questions: http://localhost:${PORT}/api/quiz/questions`);
+      console.log(`📍   Quiz submit (route 1): http://localhost:${PORT}/api/quiz/submit`);
+      console.log(`📍   Quiz submit (route 2): http://localhost:${PORT}/api/quiz/results`);
+      console.log(`📍   Quiz results admin: http://localhost:${PORT}/api/quiz/results/admin`);
+      console.log(`📍   Mark quiz read: http://localhost:${PORT}/api/quiz/results/mark-read`);
+      console.log(`\n⚙️ Course management routes:`);
       console.log(`📍   Upload general questions: http://localhost:${PORT}/api/admin/upload-general-questions`);
       console.log(`📍   Upload masterclass questions: http://localhost:${PORT}/api/admin/upload-masterclass-questions`);
       console.log(`📍   General course results: http://localhost:${PORT}/api/user/general-course-results`);
@@ -1868,19 +2017,24 @@ const startServer = async () => {
       console.log(`📍   All course results (admin): http://localhost:${PORT}/api/admin/all-course-results`);
       console.log(`📍   Course notifications: http://localhost:${PORT}/api/admin/course-completed-notifications`);
       console.log(`📍   Mark course read: http://localhost:${PORT}/api/admin/mark-course-completed-read`);
-      console.log(`📍 General course questions: http://localhost:${PORT}/api/general-course-questions`);
-      console.log(`📍 Masterclass course questions: http://localhost:${PORT}/api/masterclass-course-questions`);
-      console.log(`📍 Quiz collections debug: http://localhost:${PORT}/api/debug/quiz-collections`);
-      console.log(`📍 Quiz by destination debug: http://localhost:${PORT}/api/debug/quiz-by-destination`);
-      console.log(`📍 Messaging system: http://localhost:${PORT}/api/messages/`);
-      console.log(`📍 Debug route: http://localhost:${PORT}/api/debug/messages-sent`);
-      console.log(`📍 Auth test: http://localhost:${PORT}/api/debug/auth-test`);
-      console.log(`📍 Routes list: http://localhost:${PORT}/api/debug-routes`);
-      console.log(`📍 Mark messages read: http://localhost:${PORT}/api/notifications/mark-admin-messages-read`);
-      console.log(`📍 Mark notifications read: http://localhost:${PORT}/api/notifications/mark-read`);
+      console.log(`\n📝 Course questions routes:`);
+      console.log(`📍   General course questions: http://localhost:${PORT}/api/general-course-questions`);
+      console.log(`📍   Masterclass course questions: http://localhost:${PORT}/api/masterclass-course-questions`);
+      console.log(`\n🐛 Debug routes:`);
+      console.log(`📍   Quiz collections debug: http://localhost:${PORT}/api/debug/quiz-collections`);
+      console.log(`📍   Quiz by destination debug: http://localhost:${PORT}/api/debug/quiz-by-destination`);
+      console.log(`📍   Messaging system: http://localhost:${PORT}/api/messages/`);
+      console.log(`📍   Debug route: http://localhost:${PORT}/api/debug/messages-sent`);
+      console.log(`📍   Auth test: http://localhost:${PORT}/api/debug/auth-test`);
+      console.log(`📍   Routes list: http://localhost:${PORT}/api/debug-routes`);
+      console.log(`📍   Mark messages read: http://localhost:${PORT}/api/notifications/mark-admin-messages-read`);
+      console.log(`📍   Mark notifications read: http://localhost:${PORT}/api/notifications/mark-read`);
       console.log('\n📊 Enhanced logging enabled - all requests will be logged');
       console.log('🎯 Quiz system using: quiz_questions (120 docs) and quiz_results (3 docs) collections');
       console.log('📚 Course management: course_results (new), general_course_questions, masterclass_course_questions collections');
+      console.log('🎓 Certificate enhancement: Now fetches user details and course descriptions from MongoDB');
+      console.log('👤 User data: Fetches from users collection for enhanced certificates');
+      console.log('📝 Course descriptions: Fetched from general_course_questions collection');
     });
 
     // Attempt database connection in background
