@@ -23,6 +23,8 @@ import AdminManageCourses from './components/AdminManageCourses';
 import GeneralCourseQuestions from './components/GeneralCourseQuestions';
 import MasterclassCourseQuestions from './components/MasterclassCourseQuestions';
 import QuizAttempt from './components/QuizAttempt';
+import AdminCommunityTab from './components/AdminCommunityTab';
+import UserCommunityTab from './components/UserCommunityTab';
 import './App.css';
 
 // Reusable Slider Component for both Splash Screen and Home Page
@@ -745,17 +747,16 @@ const App = () => {
             {currentPage === 'admin-messages-from-students' && <MessageFromStudents />}
             {currentPage === 'admin-manage-courses' && <AdminManageCourses />}
             
+            {/* Community Pages */}
+            {currentPage === 'community' && userRole === 'admin' && <AdminCommunityTab />}
+            {currentPage === 'community' && userRole !== 'admin' && <UserCommunityTab />}
+            {currentPage === 'admin-community' && <AdminCommunityTab />}
+            
             {/* Placeholder Pages */}
             {currentPage === 'important-information' && (
               <div className="container py-4">
                 <h2>Important Information</h2>
                 <p>Content coming soon...</p>
-              </div>
-            )}
-            {currentPage === 'community' && (
-              <div className="container py-4">
-                <h2>Community</h2>
-                <p>Community features coming soon...</p>
               </div>
             )}
             {currentPage === 'rate-share' && (
@@ -768,12 +769,6 @@ const App = () => {
               <div className="container py-4">
                 <h2>Send Information</h2>
                 <p>Admin information sending features coming soon...</p>
-              </div>
-            )}
-            {currentPage === 'admin-community' && (
-              <div className="container py-4">
-                <h2>Admin Community</h2>
-                <p>Admin community features coming soon...</p>
               </div>
             )}
             
