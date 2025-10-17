@@ -1,4 +1,3 @@
-// src/components/AdminCommunityTab.jsx
 import React, { useState, useEffect } from 'react';
 import CommunityCallModal from './CommunityCallModal';
 import MessageThread from './MessageThread';
@@ -11,18 +10,41 @@ const AdminCommunityTab = () => {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasActiveCall, setHasActiveCall] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const socket = socketService.connect();
     
+    // Listen for connection
+    socket.on('connect', () => {
+      console.log('✅ Admin connected to socket server');
+      setIsConnected(true);
+      
+      // Join the app with admin data
+      socket.emit('user_join', {
+        userId: userData.id,
+        userName: userData.name || userData.username || 'Admin',
+        role: 'admin'
+      });
+    });
+
+    // Listen for message history
+    socket.on('message_history', (messageHistory) => {
+      console.log('📜 Loading message history:', messageHistory.length, 'messages');
+      setMessages(prev => [...messageHistory, ...prev]);
+    });
+
     // Listen for call participants updates
     socket.on('call_participants_update', (data) => {
       console.log('📊 Participants updated:', data.participants);
       setCallParticipants(data.participants);
+      setCurrentCallId(data.callId);
     });
 
     // Listen for new messages
     socket.on('new_message', (message) => {
+      console.log('💬 New message received:', message);
       setMessages(prev => [...prev, message]);
     });
 
@@ -38,6 +60,8 @@ const AdminCommunityTab = () => {
 
     // Cleanup on unmount
     return () => {
+      socket.off('connect');
+      socket.off('message_history');
       socket.off('call_participants_update');
       socket.off('new_message');
       socket.off('user_joined_call');
@@ -71,10 +95,12 @@ const AdminCommunityTab = () => {
       const userData = JSON.parse(localStorage.getItem('userData') || '{}');
       setCallParticipants([{
         id: userData.id,
+        userId: userData.id,
         name: userData.name || userData.username || 'Admin',
         isMuted: false,
         isAdmin: true,
-        isYou: true
+        isYou: true,
+        role: 'admin'
       }]);
       
     } catch (error) {
@@ -114,14 +140,22 @@ const AdminCommunityTab = () => {
         <div className="col-12">
           <div className="card border-0 shadow-sm">
             <div className="card-body text-center">
-              <h2 className="card-title h4 mb-2">Community Hub</h2>
+              <h2 className="card-title h4 mb-2">Community Hub - Admin</h2>
               <p className="text-muted mb-4">Connect with all users in real-time</p>
-              {hasActiveCall && (
-                <div className="alert alert-info mb-0">
-                  <i className="fas fa-broadcast-tower me-2"></i>
-                  <strong>Live Call Active!</strong> Users can join your community call.
-                </div>
-              )}
+              <div className="d-flex justify-content-center gap-3">
+                <small className={`badge ${isConnected ? 'bg-success' : 'bg-warning'}`}>
+                  {isConnected ? '🟢 Connected' : '🟡 Connecting...'}
+                </small>
+                {hasActiveCall && (
+                  <span className="badge bg-info">
+                    <i className="fas fa-broadcast-tower me-1"></i>
+                    Live Call Active
+                  </span>
+                )}
+                <span className="badge bg-primary">
+                  {messages.length} Messages
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -137,7 +171,10 @@ const AdminCommunityTab = () => {
                   <i className="fas fa-users fa-3x"></i>
                 </div>
                 <h3 className="h5">Start Community Call</h3>
-                <p className="flex-grow-1">Initiate a call that all registered users can join. You'll be the moderator.</p>
+                <p className="flex-grow-1">
+                  Initiate a persistent call that all users can join anytime. 
+                  The call remains active until you explicitly end it.
+                </p>
                 <button 
                   onClick={startCall}
                   disabled={isLoading}
@@ -155,6 +192,9 @@ const AdminCommunityTab = () => {
                     </>
                   )}
                 </button>
+                <small className="text-muted mt-2">
+                  Users can join anytime - call persists until you end it
+                </small>
               </div>
             </div>
           </div>
@@ -162,7 +202,20 @@ const AdminCommunityTab = () => {
           {/* Message Thread */}
           <div className="col-12 col-lg-6">
             <div className="card h-100">
-              <div className="card-body d-flex flex-column">
+              <div className="card-header d-flex justify-content-between align-items-center">
+                <h3 className="h5 mb-0">Community Chat</h3>
+                <div className="d-flex gap-2">
+                  <span className="badge bg-primary">{messages.length}</span>
+                  <button 
+                    className="btn btn-sm btn-outline-secondary"
+                    onClick={() => setMessages([])}
+                    title="Clear messages"
+                  >
+                    <i className="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <div className="card-body d-flex flex-column p-0">
                 <MessageThread 
                   messages={messages}
                   onSendMessage={addMessage}

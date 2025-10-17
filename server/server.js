@@ -9,9 +9,14 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware
+// Middleware - FINAL CORS CONFIGURATION FOR PRODUCTION
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  origin: [
+    "http://localhost:5173", 
+    "http://localhost:5174",
+    "https://travel-tour-app-seven.vercel.app", // Your ACTUAL frontend URL
+    "https://travel-tour-backend-8erv.onrender.com" // Your backend URL
+  ],
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));
@@ -30,6 +35,9 @@ app.use((req, res, next) => {
 // Serve uploaded files statically
 app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/uploads/courses/images', express.static(path.join(__dirname, 'uploads', 'courses', 'images')));
+
+// ADDED: Serve static files from React build
+app.use(express.static(path.join(__dirname, '../dist')));
 
 // Public Routes (no auth required)
 const { router: authRouter, authMiddleware } = require('./routes/auth');
@@ -1867,6 +1875,13 @@ app.get('/api/debug/quiz-by-destination', async (req, res) => {
   }
 });
 
+// ADDED: Handle client-side routing - MUST BE AFTER ALL API ROUTES BUT BEFORE ERROR HANDLERS
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  }
+});
+
 // IMPROVED MONGODB CONNECTION WITH RETRY LOGIC
 const connectWithRetry = async (retries = 5, delay = 5000) => {
   console.log('🔄 Attempting to connect to MongoDB...');
@@ -1974,21 +1989,28 @@ app.use((error, req, res, next) => {
   });
 });
 
-// 404 handler
+// 404 handler - UPDATED to handle API routes properly
 app.use('*', (req, res) => {
-  console.log(`🔍 404 - Route not found: ${req.originalUrl}`);
-  res.status(404).json({
-    success: false,
-    message: 'API endpoint not found',
-    requestedUrl: req.originalUrl
-  });
+  if (req.path.startsWith('/api')) {
+    console.log(`🔍 404 - API endpoint not found: ${req.originalUrl}`);
+    return res.status(404).json({
+      success: false,
+      message: 'API endpoint not found',
+      requestedUrl: req.originalUrl
+    });
+  }
 });
 
-// Initialize Socket.io
+// Initialize Socket.io - UPDATED VERSION WITH PERSISTENT CALLS
 const initializeSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: ["http://localhost:5173", "http://localhost:5174"],
+      origin: [
+        "http://localhost:5173", 
+        "http://localhost:5174",
+        "https://travel-tour-app-seven.vercel.app", // Your ACTUAL frontend URL
+        "https://travel-tour-backend-8erv.onrender.com" // Your backend URL
+      ],
       methods: ["GET", "POST"],
       credentials: true
     }
@@ -1996,6 +2018,10 @@ const initializeSocket = (server) => {
 
   const activeCalls = new Map();
   const userSockets = new Map();
+  const communityMessages = []; // Store messages persistently
+
+  // Load existing active calls from database or keep them in memory
+  // For production, you'd want to store this in Redis or MongoDB
 
   io.on('connection', (socket) => {
     console.log('🔌 User connected:', socket.id);
@@ -2010,6 +2036,25 @@ const initializeSocket = (server) => {
       });
       
       console.log(`👤 ${userData.userName} (${userData.role}) joined`);
+      
+      // Send current active calls to the user
+      if (activeCalls.size > 0) {
+        activeCalls.forEach((call, callId) => {
+          if (call.isActive) {
+            socket.emit('call_started', {
+              callId,
+              adminName: call.adminName,
+              message: `${call.adminName} has an active community call`,
+              startTime: call.startTime
+            });
+          }
+        });
+      }
+      
+      // Send message history
+      if (communityMessages.length > 0) {
+        socket.emit('message_history', communityMessages.slice(-50)); // Last 50 messages
+      }
       
       // Broadcast to all users that someone joined
       socket.broadcast.emit('user_online', {
@@ -2035,7 +2080,8 @@ const initializeSocket = (server) => {
         adminName: adminUser.userName,
         participants: new Map([[socket.id, adminUser]]),
         startTime: new Date(),
-        isActive: true
+        isActive: true,
+        createdAt: new Date()
       };
       
       activeCalls.set(callId, call);
@@ -2045,12 +2091,13 @@ const initializeSocket = (server) => {
       // Add admin as first participant
       socket.join(callId);
       
-      // Notify ALL users about the call
+      // Notify ALL users about the call - this persists until admin ends it
       io.emit('call_started', {
         callId,
         adminName: adminUser.userName,
         message: `${adminUser.userName} has started a community call`,
-        startTime: call.startTime
+        startTime: call.startTime,
+        persistent: true
       });
       
       // Send current participants to admin
@@ -2119,10 +2166,9 @@ const initializeSocket = (server) => {
           participants: Array.from(call.participants.values())
         });
         
-        // If no participants left, end the call
+        // If no participants left, DON'T end the call - keep it active for others to join
         if (call.participants.size === 0) {
-          activeCalls.delete(data.callId);
-          console.log(`📞 Call ended (no participants): ${data.callId}`);
+          console.log(`📞 Call ${data.callId} has no participants, but remains active`);
         }
       }
     });
@@ -2162,6 +2208,14 @@ const initializeSocket = (server) => {
           callId: messageData.callId || null
         };
         
+        // Store message persistently
+        communityMessages.push(message);
+        
+        // Keep only last 1000 messages to prevent memory issues
+        if (communityMessages.length > 1000) {
+          communityMessages.splice(0, communityMessages.length - 1000);
+        }
+        
         // Broadcast message to all users
         if (messageData.callId) {
           // If it's a call message, send only to call participants
@@ -2198,14 +2252,13 @@ const initializeSocket = (server) => {
               participants: Array.from(call.participants.values())
             });
             
-            // If admin disconnects, end the call
+            // If admin disconnects, keep the call active but notify
             if (call.adminId === user.userId) {
-              io.emit('call_ended', {
+              io.emit('call_admin_away', {
                 callId: callId,
-                message: 'Call ended because admin disconnected',
-                endedBy: 'System'
+                message: 'Admin has left the call, but call remains active',
+                adminName: user.userName
               });
-              activeCalls.delete(callId);
             }
           }
         });
@@ -2230,6 +2283,7 @@ const startServer = async () => {
       console.log(`\n🎉 Server running on port ${PORT}`);
       console.log(`📍 API available at: http://localhost:${PORT}/api`);
       console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+      console.log(`📍 Frontend served from: http://localhost:${PORT}`);
       console.log(`\n🎓 ENHANCED CERTIFICATE ENDPOINTS:`);
       console.log(`📍   Get user by email: http://localhost:${PORT}/api/users/email/:email`);
       console.log(`📍   Get user by username: http://localhost:${PORT}/api/users/username/:username`);
@@ -2243,7 +2297,7 @@ const startServer = async () => {
       console.log(`\n📚 Course routes:`);
       console.log(`📍   Notification counts: http://localhost:${PORT}/api/courses/notification-counts`);
       console.log(`📍   Admin messages: http://localhost:${PORT}/api/notifications/admin-messages/:userId`);
-      console.log(`📍   Get courses: http://localhost:${PORT}/api/courses`);
+      console.log(`📍   Get courses: http://localhost:${Port}/api/courses`);
       console.log(`📍   Get course by ID: http://localhost:${PORT}/api/courses/:id`);
       console.log(`📍   Validate masterclass: http://localhost:${PORT}/api/courses/validate-masterclass-access`);
       console.log(`📍   Direct course view: http://localhost:${PORT}/api/direct-courses/:id/view`);
@@ -2283,6 +2337,8 @@ const startServer = async () => {
       console.log('👤 User data: Fetches from users collection for enhanced certificates');
       console.log('📝 Course descriptions: Fetched from general_course_questions collection');
       console.log('👥 Community features: Real-time messaging and voice calls enabled');
+      console.log('🌐 CORS configured for production: travel-tour-app-seven.vercel.app and travel-tour-backend-8erv.onrender.com');
+      console.log('📦 Frontend static files served from: ../dist directory');
     });
 
     // Attempt database connection in background

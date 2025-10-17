@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: travel-tour-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        value: your-mongodb-atlas-connection-string

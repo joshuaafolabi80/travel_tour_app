@@ -15,6 +15,26 @@ const UserCommunityTab = () => {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    // Check if there's an active call stored
+    const storedCall = localStorage.getItem('activeCommunityCall');
+    if (storedCall) {
+      const activeCall = JSON.parse(storedCall);
+      const callAge = Date.now() - new Date(activeCall.receivedAt).getTime();
+      const maxCallAge = 24 * 60 * 60 * 1000; // 24 hours max
+      
+      if (callAge < maxCallAge) {
+        setHasCallNotification(true);
+        setActiveCallInfo(activeCall);
+        setCurrentCallId(activeCall.callId);
+        console.log('📞 Restored active call from storage:', activeCall);
+      } else {
+        // Clear expired call
+        localStorage.removeItem('activeCommunityCall');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const name = userData.name || userData.username || 'User';
     setUserName(name);
@@ -36,16 +56,30 @@ const UserCommunityTab = () => {
       });
     });
 
-    // Listen for call started by admin
+    // Add this new socket listener for message history
+    socket.on('message_history', (messageHistory) => {
+      console.log('📜 Loading message history:', messageHistory.length, 'messages');
+      setMessages(prev => [...messageHistory, ...prev]);
+    });
+
+    // Update the call_started listener to handle persistent calls:
     socket.on('call_started', (data) => {
       console.log('📞 Call started by admin:', data);
       setHasCallNotification(true);
       setActiveCallInfo(data);
       setCurrentCallId(data.callId);
-      setIsCallActive(false); // Ensure we're not in active call state
+      setIsCallActive(false);
+      
+      // Store the active call info in localStorage for persistence
+      localStorage.setItem('activeCommunityCall', JSON.stringify({
+        callId: data.callId,
+        adminName: data.adminName,
+        startTime: data.startTime,
+        receivedAt: new Date()
+      }));
     });
 
-    // Listen for call ended
+    // Update the call_ended listener to clear stored call:
     socket.on('call_ended', (data) => {
       console.log('📞 Call ended:', data);
       setHasCallNotification(false);
@@ -53,6 +87,9 @@ const UserCommunityTab = () => {
       setActiveCallInfo(null);
       setCurrentCallId(null);
       setCallParticipants([]);
+      
+      // Clear from localStorage
+      localStorage.removeItem('activeCommunityCall');
     });
 
     // Listen for participants updates
@@ -94,6 +131,7 @@ const UserCommunityTab = () => {
     return () => {
       console.log('🧹 Cleaning up UserCommunityTab socket listeners');
       socket.off('connect');
+      socket.off('message_history');
       socket.off('call_started');
       socket.off('call_ended');
       socket.off('call_participants_update');
@@ -174,6 +212,8 @@ const UserCommunityTab = () => {
   const dismissNotification = () => {
     setHasCallNotification(false);
     setActiveCallInfo(null);
+    // Also remove from localStorage when manually dismissed
+    localStorage.removeItem('activeCommunityCall');
   };
 
   console.log('🔍 Current state:', {
