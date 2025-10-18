@@ -1,5 +1,10 @@
-// src/services/socketService.js
+// src/services/socketService.js - FIXED FOR PRODUCTION
 import { io } from 'socket.io-client';
+
+// Use environment variable for socket URL with fallback
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+
+console.log('🔌 Socket URL:', SOCKET_URL);
 
 class SocketService {
   constructor() {
@@ -10,9 +15,12 @@ class SocketService {
   connect() {
     if (this.socket) return this.socket;
 
-    this.socket = io('http://localhost:5000', {
-      transports: ['websocket'],
-      withCredentials: true
+    this.socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      withCredentials: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     });
 
     this.socket.on('connect', () => {
@@ -30,8 +38,13 @@ class SocketService {
       }
     });
 
-    this.socket.on('disconnect', () => {
-      console.log('🔌 Disconnected from server');
+    this.socket.on('disconnect', (reason) => {
+      console.log('🔌 Disconnected from server:', reason);
+      this.isConnected = false;
+    });
+
+    this.socket.on('connect_error', (error) => {
+      console.error('🔌 Socket connection error:', error);
       this.isConnected = false;
     });
 

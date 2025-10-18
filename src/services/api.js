@@ -1,7 +1,10 @@
-// src/services/api.js - UPDATED VERSION
+// src/services/api.js - FIXED FOR PRODUCTION
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+// Use environment variable for API base URL with fallback
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
+console.log('🌐 API Base URL:', API_BASE_URL);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -9,13 +12,13 @@ const api = axios.create({
     'Content-Type': 'application/json'
   },
   timeout: 30000,
+  withCredentials: true
 });
 
 // Enhanced request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('authToken');
-    console.log('🔐 Using token:', token ? 'Yes' : 'No');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -30,7 +33,6 @@ api.interceptors.request.use(
 // Enhanced response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ API Response:', response.config.url, response.status);
     return response;
   },
   (error) => {
@@ -41,15 +43,8 @@ api.interceptors.response.use(
     });
     
     if (error.response?.status === 401) {
-      console.log('🔒 Unauthorized - clearing tokens');
       localStorage.removeItem('authToken');
       localStorage.removeItem('userData');
-      // Optional: redirect to login page
-      // window.location.href = '/login';
-    }
-    
-    if (error.response?.status === 403) {
-      console.log('🚫 Forbidden - insufficient permissions');
     }
     
     return Promise.reject(error);
