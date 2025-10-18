@@ -1,16 +1,3 @@
-//import { defineConfig } from 'vite';
-//import react from '@vitejs/plugin-react';
-
-// https://vitejs.dev/config/
-//export default defineConfig({
-//  plugins: [react()],
-  // Add the server configuration here
-//  server: {
-    // 'msedge' tells Vite to use the Microsoft Edge browser
-//    open: 'msedge' 
-//  }
-//});
-
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -21,7 +8,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     allowedHosts: true,
-    hmr: false, // ← COMPLETELY DISABLE HMR
+    hmr: false,
     proxy: {
       '/api': {
         target: 'http://localhost:5000',
@@ -35,5 +22,22 @@ export default defineConfig({
         ws: true
       }
     }
+  },
+  // CRITICAL FIXES FOR PRODUCTION
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
+      }
+    }
+  },
+  // FIX FOR MIME TYPE ISSUES
+  base: '/',
+  esbuild: {
+    loader: 'jsx'
   }
 });
